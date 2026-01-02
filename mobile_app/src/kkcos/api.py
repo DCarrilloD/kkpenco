@@ -1,7 +1,7 @@
 import httpx
 from shared.models import KKEvent
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "https://kkpenco.duckdns.org/"
 
 class APIClient:
     def __init__(self):
