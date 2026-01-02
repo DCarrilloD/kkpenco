@@ -28,7 +28,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0' # Versión estable reciente
+          flutter-version: '3.27.1' # <--- CAMBIA ESTO (Antes ponía 3.19.0)
 
       - name: Build APK
         # El comando mágico de Flet para empaquetar
