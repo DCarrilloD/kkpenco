@@ -14,6 +14,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      # --- NUEVO PASO: Instalar librerías de sistema Linux ---
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev pkg-config libgirepository1.0-dev libcairo2-dev
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
@@ -21,6 +27,10 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # Actualizamos pip por si acaso
+          python -m pip install --upgrade pip
+          
+          # Instalamos dependencias
           pip install -r requirements.txt
           pip install flet
 
@@ -32,11 +42,10 @@ jobs:
 
       - name: Build APK
         run: |
-          # 1. Copiamos la lista de ingredientes dentro de la carpeta de la app
+          # 1. Copiamos los requisitos
           cp requirements.txt mobile_app/
           
-          # 2. Ejecutamos el constructor apuntando a la carpeta y al nombre del archivo correcto
-          # "yes" acepta licencias, "mobile_app" es la carpeta, "--module-name" es tu archivo
+          # 2. Construimos (Con el truco de "yes" y apuntando a mobile_app)
           yes | flet build apk mobile_app --module-name main_flet --verbose
 
       - name: Upload APK
