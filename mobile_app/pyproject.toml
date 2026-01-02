@@ -1,0 +1,26 @@
+[tool.briefcase]
+project_name = "KKCoS"
+bundle = "com.example.kkcos"
+version = "0.0.1"
+url = "https://example.com/kkcos"
+license = "MIT"
+author = "Antigravity"
+author_email = "antigravity@example.com"
+
+[tool.briefcase.app.kkcos]
+formal_name = "KKCoS"
+description = "Social Poop Tracker"
+icon = "src/kkcos/resources/kkcos"
+sources = ["src/kkcos"]
+requires = ["httpx", "sqlmodel"]
+
+[tool.poetry]
+name = "kkcos-mobile"
+version = "0.1.0"
+description = ""
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+toga = "^0.4.0"
+httpx = "^0.24.0"

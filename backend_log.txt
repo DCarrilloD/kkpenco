@@ -1,0 +1,13 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\dvd_c\\Desktop\\Antigravity']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [17512] using WatchFiles
+INFO:     Started server process [21760]
+INFO:     Waiting for application startup.
+2026-01-01 23:12:03,651 INFO sqlalchemy.engine.Engine BEGIN (implicit)
+2026-01-01 23:12:03,652 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("kkevent")
+2026-01-01 23:12:03,652 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-01-01 23:12:03,652 INFO sqlalchemy.engine.Engine PRAGMA main.table_info("users")
+2026-01-01 23:12:03,652 INFO sqlalchemy.engine.Engine [raw sql] ()
+2026-01-01 23:12:03,652 INFO sqlalchemy.engine.Engine COMMIT
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'mobile_app\main_flet.py'. Reloading...
