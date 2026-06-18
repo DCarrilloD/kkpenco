@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Reglas para el documento de usuario
+    match /users/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+      
+      // Reglas para subcolecciones de usuarios como monthly_stats
+      match /monthly_stats/{statId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+    }
+    
+    // Reglas para los eventos de caca
+    match /events/{eventId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if request.auth != null 
+                    && resource.data.userId == request.auth.uid 
+                    && (request.time - resource.data.timestamp) < duration.value(5, 'm');
+    }
+    
+    // Reglas para el chat
+    match /chat/{messageId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null; // Para permitir añadir/quitar reacciones
+      allow delete: if false; // No se permite borrar mensajes del chat
+    }
+    
+    // Reglas para presencia/escritura en chat
+    match /typing/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "kkpenco-app-2026",
+          "appId": "1:322337821489:android:a27fdc46aed9ad04f69610",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "kkpenco-app-2026",
+          "configurations": {
+            "android": "1:322337821489:android:a27fdc46aed9ad04f69610",
+            "web": "1:322337821489:web:2fd47d84c87caaf5f69610"
+          }
+        }
+      }
+    }
+  },
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "us-central1",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

@@ -1,0 +1,44 @@
+name: kkpenco
+description: A modern Flutter mobile application rewriting the Antigravity Flet app.
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  firebase_core: ^3.10.0
+  firebase_auth: ^5.4.0
+  cloud_firestore: ^5.6.0
+  intl: ^0.19.0
+  google_fonts: ^6.2.1
+  csv: ^6.0.0
+  path_provider: ^2.1.2
+  share_plus: ^10.1.4
+  window_manager: ^0.5.1
+  excel: ^4.0.6
+  local_auth: ^3.0.1
+  audioplayers: ^6.7.1
+  image_picker: ^1.2.2
+  geolocator: ^14.0.2
+  url_launcher: ^6.3.2
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
+  home_widget: ^0.7.0
+  file_picker: ^8.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
