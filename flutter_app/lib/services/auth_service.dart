@@ -47,9 +47,12 @@ class AuthService {
   // Obtener datos del perfil de usuario desde Firestore
   Future<Map<String, dynamic>?> getUserProfile(String uid) async {
     if (useMockData) {
+      final email = _mockCurrentUser?.email ?? 'mock@kkpenco.com';
+      final bool isMockAdmin = email.contains('admin') || uid == 'mock_uid';
       return {
         'username': _mockCurrentUser?.displayName ?? 'Admin Mock',
-        'email': _mockCurrentUser?.email ?? 'mock@kkpenco.com',
+        'email': email,
+        'role': isMockAdmin ? 'admin' : 'user',
       };
     }
     try {
@@ -71,21 +74,46 @@ class AuthService {
       throw Exception('El registro no está disponible en modo simulación. Inicia sesión como Invitado (cualquier email/pass).');
     }
 
-    // 1. Crear el usuario en Firebase Auth
+    final cleanEmail = email.trim().toLowerCase();
+
+    // 1. Verificar si la colección de usuarios está vacía (primer registro = admin)
+    final usersSnapshot = await _db.collection('users').limit(1).get();
+    final bool isFirstUser = usersSnapshot.docs.isEmpty;
+
+    String role = 'user';
+    if (!isFirstUser) {
+      // 2. Verificar lista blanca en Firestore
+      final authDoc = await _db.collection('authorized_emails').doc(cleanEmail).get();
+      if (!authDoc.exists) {
+        throw Exception('Este correo electrónico no está autorizado en esta aplicación privada. Pídele al administrador que te añada.');
+      }
+      final authData = authDoc.data();
+      role = authData?['role'] ?? 'user';
+    } else {
+      role = 'admin';
+    }
+
+    // 3. Crear el usuario en Firebase Auth
     final userCredential = await _auth.createUserWithEmailAndPassword(
-      email: email,
+      email: cleanEmail,
       password: password,
     );
 
-    // 2. Actualizar displayName en Firebase Auth
+    // 4. Actualizar displayName en Firebase Auth
     await userCredential.user?.updateDisplayName(username);
 
-    // 3. Crear documento de usuario en Firestore
+    // 5. Crear documento de usuario en Firestore con su rol
     await _db.collection('users').doc(userCredential.user!.uid).set({
       'username': username,
-      'email': email,
+      'email': cleanEmail,
+      'role': role,
       'createdAt': FieldValue.serverTimestamp(),
     });
+
+    // 6. Marcar como registrado en la lista blanca si no es el primer usuario
+    if (!isFirstUser) {
+      await _db.collection('authorized_emails').doc(cleanEmail).update({'registered': true});
+    }
 
     return userCredential;
   }
@@ -96,8 +124,9 @@ class AuthService {
     required String password,
   }) async {
     if (useMockData) {
+      final String uid = email.contains('admin') ? 'mock_uid' : '${email.split('@')[0]}_uid';
       _mockCurrentUser = AppUser(
-        uid: 'mock_uid',
+        uid: uid,
         displayName: email.split('@')[0],
         email: email,
       );

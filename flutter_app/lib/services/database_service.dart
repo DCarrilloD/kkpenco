@@ -77,6 +77,13 @@ class DatabaseService {
   static final Map<String, String> _mockTypingUsers = {};
   static final _typingStreamController = StreamController<Map<String, String>>.broadcast();
 
+  // Lista blanca Mock
+  static final List<Map<String, dynamic>> _mockAuthorizedEmails = [
+    {'email': 'admin@kkpenco.com', 'role': 'admin', 'registered': true},
+    {'email': 'amigo@kkpenco.com', 'role': 'user', 'registered': false},
+  ];
+  static final _authorizedEmailsStreamController = StreamController<List<Map<String, dynamic>>>.broadcast();
+
   static bool _mockDataLoaded = false;
 
   DatabaseService() {
@@ -320,17 +327,38 @@ class DatabaseService {
     await _checkAndUnlockAchievements(event);
   }
 
+  // Verificar si un usuario tiene el rol admin en Firestore o en la sesión simulada
+  Future<bool> isAdminUser(String? uid) async {
+    if (uid == null) return false;
+    if (useMockData) {
+      final email = AuthService().currentUser?.email ?? '';
+      return email.contains('admin') || uid == 'mock_uid';
+    }
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      if (!doc.exists) return false;
+      final data = doc.data();
+      return data?['role'] == 'admin';
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Eliminar evento y actualizar contadores del usuario
   Future<void> deleteEvent(KKEvent event) async {
-    // Validar seguridad de usuario y tiempo límite de 5 minutos
+    // Validar seguridad de usuario y tiempo límite de 5 minutos (excepto si es administrador)
     final currentUserId = AuthService().currentUser?.uid;
-    if (event.userId != currentUserId) {
+    final bool isAdmin = await isAdminUser(currentUserId);
+
+    if (event.userId != currentUserId && !isAdmin) {
       throw Exception("No tienes permisos para eliminar este registro.");
     }
 
-    final diff = DateTime.now().difference(event.timestamp).inMinutes;
-    if (diff >= 5) {
-      throw Exception("Solo puedes eliminar registros durante los primeros 5 minutos.");
+    if (!isAdmin) {
+      final diff = DateTime.now().difference(event.timestamp).inMinutes;
+      if (diff >= 5) {
+        throw Exception("Solo puedes eliminar registros durante los primeros 5 minutos.");
+      }
     }
 
     if (useMockData) {
@@ -559,6 +587,37 @@ class DatabaseService {
       if (count >= 5) {
         await unlockAchievement(message.userId, 'toilet_photo', message.username);
       }
+    }
+  }
+
+  // Eliminar mensaje de chat (solo emisor o administrador)
+  Future<void> deleteChatMessage(String messageId) async {
+    final currentUserId = AuthService().currentUser?.uid;
+    if (currentUserId == null) {
+      throw Exception("Usuario no autenticado.");
+    }
+
+    if (useMockData) {
+      _mockChatMessages.removeWhere((m) => m.id == messageId);
+      _chatStreamController.add(List.from(_mockChatMessages));
+      _saveMockData();
+      return;
+    }
+
+    final docRef = _db.collection('chat').doc(messageId);
+    final doc = await docRef.get();
+    if (!doc.exists) {
+      throw Exception("El mensaje no existe.");
+    }
+
+    final data = doc.data() as Map<String, dynamic>;
+    final senderId = data['userId'] ?? '';
+    final bool isAdmin = await isAdminUser(currentUserId);
+
+    if (senderId == currentUserId || isAdmin) {
+      await docRef.delete();
+    } else {
+      throw Exception("No tienes permisos para eliminar este mensaje.");
     }
   }
 
@@ -1529,6 +1588,96 @@ class DatabaseService {
         await unlockAchievement(userId, 'duel_master', username);
       }
 
+      // Logros Anuales de Larga Duración (se resetean al término del año)
+      final currentYear = DateTime.now().year;
+      final yearEventsCount = userEvs.where((e) => e.timestamp.year == currentYear).length;
+      if (yearEventsCount >= 100) {
+        await unlockAchievement(userId, 'year_poop_100', username);
+      }
+      if (yearEventsCount >= 200) {
+        await unlockAchievement(userId, 'year_poop_200', username);
+      }
+      if (yearEventsCount >= 300) {
+        await unlockAchievement(userId, 'year_poop_300', username);
+      }
+      if (yearEventsCount >= 400) {
+        await unlockAchievement(userId, 'year_poop_400', username);
+      }
+
+      // Nuevos Logros Variados de Larga Duración
+      final totalDurationSeconds = userEvs.fold(0, (acc, e) => acc + (e.duration ?? 0));
+      if (totalDurationSeconds >= 36000) { // 10 horas en segundos
+        await unlockAchievement(userId, 'time_marathoner_10h', username);
+      }
+
+      final outOfHomeCount = userEvs.where((e) => e.location != LocationTag.casa).length;
+      if (outOfHomeCount >= 50) {
+        await unlockAchievement(userId, 'out_of_home_50', username);
+      }
+
+      if (totalWeight >= 20000.0) { // 20 kg en gramos
+        await unlockAchievement(userId, 'heavy_weight_20kg', username);
+      }
+
+      final hoursSet = userEvs.map((e) => e.timestamp.hour).toSet();
+      if (hoursSet.length >= 12) {
+        await unlockAchievement(userId, 'all_day_active', username);
+      }
+
+      final currentMonthStr = '${event.timestamp.year}-${event.timestamp.month}';
+      final monthlyCount = userEvs.where((e) => '${e.timestamp.year}-${e.timestamp.month}' == currentMonthStr).length;
+      if (monthlyCount >= 50) {
+        await unlockAchievement(userId, 'monthly_poop_50', username);
+      }
+
+      // Nuevos logros variados de larga duración
+      final yearEvents = userEvs.where((e) => e.timestamp.year == currentYear).toList();
+      
+      // monthly_consistency_12 (Calendario Completo)
+      final monthsSet = yearEvents.map((e) => e.timestamp.month).toSet();
+      if (monthsSet.length >= 12) {
+        await unlockAchievement(userId, 'monthly_consistency_12', username);
+      }
+
+      // four_seasons (Las Cuatro Estaciones)
+      final seasons = yearEvents.map((e) {
+        final m = e.timestamp.month;
+        if (m >= 3 && m <= 5) return 'primavera';
+        if (m >= 6 && m <= 8) return 'verano';
+        if (m >= 9 && m <= 11) return 'otono';
+        return 'invierno';
+      }).toSet();
+      if (seasons.length >= 4) {
+        await unlockAchievement(userId, 'four_seasons', username);
+      }
+
+      // gps_nomad_30 (El GeoCagador Profesional)
+      if (distinctCoordinates.length >= 30) {
+        await unlockAchievement(userId, 'gps_nomad_30', username);
+      }
+
+      // year_active_days_100 (Constancia del Hábito)
+      final activeDaysSet = yearEvents.map((e) => '${e.timestamp.year}-${e.timestamp.month}-${e.timestamp.day}').toSet();
+      if (activeDaysSet.length >= 100) {
+        await unlockAchievement(userId, 'year_active_days_100', username);
+      }
+
+      // regularity_expert_100 (El Reloj de Cuco)
+      final Map<int, int> hourCounts = {};
+      for (var ev in userEvs) {
+        final hr = ev.timestamp.hour;
+        hourCounts[hr] = (hourCounts[hr] ?? 0) + 1;
+      }
+      final hasFavoriteHour100 = hourCounts.values.any((c) => c >= 100);
+      if (hasFavoriteHour100) {
+        await unlockAchievement(userId, 'regularity_expert_100', username);
+      }
+
+      // weight_titan_100kg (Excavador Continental)
+      if (totalWeight >= 100000.0) { // 100 kg en gramos
+        await unlockAchievement(userId, 'weight_titan_100kg', username);
+      }
+
     } catch (e) {
       debugPrint('Error al verificar logros: $e');
     }
@@ -1751,5 +1900,76 @@ class DatabaseService {
     });
 
     await statsBatch.commit();
+  }
+
+  // --- GESTIÓN DE LISTA BLANCA (WHITELIST) ---
+  
+  // Obtener flujo de la lista blanca de correos autorizados
+  Stream<List<Map<String, dynamic>>> getAuthorizedEmails() {
+    if (useMockData) {
+      Future.microtask(() => _authorizedEmailsStreamController.add(List.from(_mockAuthorizedEmails)));
+      return _authorizedEmailsStreamController.stream;
+    }
+    return _db
+        .collection('authorized_emails')
+        .orderBy('addedAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              return {
+                'email': doc.id,
+                'role': data['role'] ?? 'user',
+                'registered': data['registered'] ?? false,
+                'addedAt': data['addedAt'] != null
+                    ? (data['addedAt'] as Timestamp).toDate()
+                    : null,
+              };
+            }).toList());
+  }
+
+  // Autorizar un nuevo email en la lista blanca
+  Future<void> authorizeEmail(String email, String role) async {
+    final cleanEmail = email.trim().toLowerCase();
+    if (cleanEmail.isEmpty) throw Exception("El correo electrónico no puede estar vacío.");
+
+    if (useMockData) {
+      // Verificar si ya existe
+      if (_mockAuthorizedEmails.any((e) => e['email'] == cleanEmail)) {
+        throw Exception("Este correo ya está en la lista blanca.");
+      }
+      _mockAuthorizedEmails.add({
+        'email': cleanEmail,
+        'role': role,
+        'registered': false,
+        'addedAt': DateTime.now(),
+      });
+      _authorizedEmailsStreamController.add(List.from(_mockAuthorizedEmails));
+      return;
+    }
+
+    final docRef = _db.collection('authorized_emails').doc(cleanEmail);
+    final doc = await docRef.get();
+    if (doc.exists) {
+      throw Exception("Este correo ya está en la lista blanca.");
+    }
+
+    await docRef.set({
+      'role': role,
+      'registered': false,
+      'addedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Revocar acceso a un email de la lista blanca (eliminarlo)
+  Future<void> revokeEmail(String email) async {
+    final cleanEmail = email.trim().toLowerCase();
+
+    if (useMockData) {
+      _mockAuthorizedEmails.removeWhere((e) => e['email'] == cleanEmail);
+      _authorizedEmailsStreamController.add(List.from(_mockAuthorizedEmails));
+      return;
+    }
+
+    await _db.collection('authorized_emails').doc(cleanEmail).delete();
   }
 }

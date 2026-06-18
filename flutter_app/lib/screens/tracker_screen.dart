@@ -44,12 +44,27 @@ class _TrackerScreenState extends State<TrackerScreen> {
   bool _hasMore = true;
   bool _loadingHistory = false;
 
+  bool _isAdmin = false;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_scrollListener);
     _loadFirstPage();
     _loadAutoGeolocatePreference();
+    _checkAdminStatus();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final user = _authService.currentUser;
+    if (user != null) {
+      final admin = await _dbService.isAdminUser(user.uid);
+      if (mounted) {
+        setState(() {
+          _isAdmin = admin;
+        });
+      }
+    }
   }
 
   Future<void> _loadAutoGeolocatePreference() async {
@@ -395,7 +410,12 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
   Future<void> _deletePoopEvent(KKEvent event) async {
     final user = _authService.currentUser;
-    if (user == null || event.userId != user.uid) {
+    if (user == null) return;
+
+    final bool isOwner = event.userId == user.uid;
+    final bool canDelete = isOwner || _isAdmin;
+
+    if (!canDelete) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -407,17 +427,19 @@ class _TrackerScreenState extends State<TrackerScreen> {
       return;
     }
 
-    final diff = DateTime.now().difference(event.timestamp).inMinutes;
-    if (diff >= 5) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Solo puedes eliminar registros durante los primeros 5 minutos.'),
-            backgroundColor: Colors.redAccent,
-          ),
-        );
+    if (!_isAdmin) {
+      final diff = DateTime.now().difference(event.timestamp).inMinutes;
+      if (diff >= 5) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Solo puedes eliminar registros durante los primeros 5 minutos.'),
+              backgroundColor: Colors.redAccent,
+            ),
+          );
+        }
+        return;
       }
-      return;
     }
 
     final confirm = await showDialog<bool>(

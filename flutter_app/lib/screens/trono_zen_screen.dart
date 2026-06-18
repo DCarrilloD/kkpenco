@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui' as ui;
+import 'package:audioplayers/audioplayers.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
 
@@ -26,16 +27,14 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   String _timeString = '00:00';
   int _elapsedSeconds = 0;
 
-  // Zen Sound State
-  bool _isPlayingSound = false;
-  String _selectedSound = 'Lluvia Relajante 🌧️';
-  final List<String> _soundsList = [
-    'Lluvia Relajante 🌧️',
-    'Bosque Místico 🌲',
-    'Olas del Mar 🌊',
-    'Cánticos Gregorianos ⛪',
-  ];
+  // Zen Music Control
+  bool _isMusicEnabled = true;
+  bool _alternateGameTrack = false;
+  String? _currentlyPlayingSource;
   late AnimationController _soundAnimController;
+
+  // Audio Player Zen
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   // Active Game State
   ActiveGame _activeGame = ActiveGame.none;
@@ -54,11 +53,23 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   bool _isInvadersGameOver = false;
   Timer? _poopInvadersTimer;
   double _invadersShipX = 0.5;
+  double _invadersShipY = 0.85;
   final List<InvaderLaser> _invaderLasers = [];
   final List<InvaderEnemy> _invaderEnemies = [];
   double _invaderSpawnProb = 0.03;
   double _invaderSpeed = 1.3;
   int _invaderShootCooldown = 0;
+  bool _hasTripleShot = false;
+  int _tripleShotTicksRemaining = 0;
+  bool _hasBurstShot = false;
+  int _burstShotTicksRemaining = 0;
+  bool _isBossActive = false;
+  double _bossX = 0.5;
+  double _bossVx = 1.2;
+  int _bossHp = 0;
+  int _bossMaxHp = 10;
+  int _bossShootCooldown = 0;
+  final List<InvaderItem> _invaderItems = [];
 
   // --- MOTOR DE JUICINESS (JUGOSIDAD) ---
   final List<GameParticle> _particles = [];
@@ -78,6 +89,9 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   bool _hasFeverMagnet = false;
   bool _hasExtraLife = false;
   bool _isMagnetActive = false;
+  bool _hasImprovedMagnet = false;
+  bool _hasLifeInsurance = false;
+  String _selectedGameFilter = 'todos';
 
   // --- VARIABLES DE JUEGO PROFESIONAL ---
   DateTime? _lastTickTime;
@@ -98,6 +112,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   int _feverTicksRemaining = 0;
   bool _hasSoapShield = false;
   int _soapShieldTicksRemaining = 0;
+  bool _isSodaFrenzy = false;
+  int _sodaFrenzyTicksRemaining = 0;
 
   // Game 2: Flappy Poop Variables
   final double _flappyX = 115.0;
@@ -107,6 +123,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   Timer? _flappyTimer;
   bool _isFlappyGameOver = false;
   double _flappyBgX = 0;
+  bool _hasFlappyShield = false;
 
   // Game 3: Toilet Jump Variables
   double _jumpX = 150;
@@ -123,6 +140,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   double _cacaScaleY = 1.0;
   bool _hasJetpack = false;
   int _jetpackTicksRemaining = 0;
+  bool _hasBalloon = false;
+  int _balloonTicksRemaining = 0;
 
 
   @override
@@ -138,6 +157,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
 
     _loadHighScores();
     _loadZenProfile();
+    _loadMusicPreference();
   }
 
   @override
@@ -148,6 +168,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     _stopToiletJump();
     _stopPoopInvaders();
     _soundAnimController.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -177,14 +198,89 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     final user = _authService.currentUser;
     if (user != null) {
       final profile = await _dbService.getUserZenProfile(user.uid);
+      final prefs = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
           _kcoins = profile['kcoins'] ?? 0;
           _equippedSkin = profile['equippedSkin'] ?? '💩';
           _unlockedSkins = List<String>.from(profile['unlockedSkins'] ?? ['💩']);
+          _hasImprovedMagnet = prefs.getBool('zen_passive_magnet_${user.uid}') ?? false;
+          _hasLifeInsurance = prefs.getBool('zen_passive_insurance_${user.uid}') ?? false;
         });
       }
     }
+  }
+
+  Future<void> _loadMusicPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isMusicEnabled = prefs.getBool('zen_music_enabled') ?? true;
+      });
+      _updateMusicPlayback();
+    }
+  }
+
+  Future<void> _toggleMusic(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('zen_music_enabled', value);
+    setState(() {
+      _isMusicEnabled = value;
+    });
+    _updateMusicPlayback();
+  }
+
+  Future<void> _updateMusicPlayback() async {
+    try {
+      if (!_isMusicEnabled) {
+        if (_currentlyPlayingSource != null) {
+          await _audioPlayer.stop();
+          _currentlyPlayingSource = null;
+        }
+        return;
+      }
+
+      final isMinigame = _activeGame == ActiveGame.cacaCatch ||
+          _activeGame == ActiveGame.flappyPoop ||
+          _activeGame == ActiveGame.toiletJump ||
+          _activeGame == ActiveGame.poopInvaders;
+
+      final String targetSource;
+      final bool isLocal;
+
+      if (isMinigame) {
+        targetSource = _alternateGameTrack
+            ? r"D:\CHROME\.old\Audio\First_Light_on_the_Ridge.mp3"
+            : r"D:\CHROME\.old\Audio\Village_of_Seven_Springs.mp3";
+        isLocal = true;
+      } else {
+        targetSource = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3';
+        isLocal = false;
+      }
+
+      if (_currentlyPlayingSource == targetSource) {
+        await _audioPlayer.setVolume(0.12);
+        return;
+      }
+
+      await _audioPlayer.stop();
+      await _audioPlayer.setReleaseMode(ReleaseMode.loop);
+      await _audioPlayer.setVolume(0.12);
+
+      if (isLocal) {
+        await _audioPlayer.play(DeviceFileSource(targetSource));
+      } else {
+        await _audioPlayer.play(UrlSource(targetSource));
+      }
+      _currentlyPlayingSource = targetSource;
+    } catch (e) {
+      debugPrint('Error updating music playback: $e');
+    }
+  }
+
+  void _onGameStarted() {
+    _alternateGameTrack = !_alternateGameTrack;
+    _updateMusicPlayback();
   }
 
   Future<void> _buyAndEquipSkin(String skin, int cost) async {
@@ -252,11 +348,13 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     if (id == 'spring' && _hasInitialSpring) alreadyHas = true;
     if (id == 'magnet' && _hasFeverMagnet) alreadyHas = true;
     if (id == 'life' && _hasExtraLife) alreadyHas = true;
+    if (id == 'passive_magnet' && _hasImprovedMagnet) alreadyHas = true;
+    if (id == 'passive_insurance' && _hasLifeInsurance) alreadyHas = true;
 
     if (alreadyHas) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('¡Ya tienes este Power-up equipado para tu siguiente partida! 🎮'),
+          content: const Text('¡Ya tienes esta mejora activa o adquirida! 🎮'),
           backgroundColor: Colors.amber[800],
         ),
       );
@@ -266,11 +364,20 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     HapticFeedback.mediumImpact();
     await _dbService.addKcoins(user.uid, -cost);
     
+    final prefs = await SharedPreferences.getInstance();
     setState(() {
       if (id == 'shield') _hasInitialSoapShield = true;
       if (id == 'spring') _hasInitialSpring = true;
       if (id == 'magnet') _hasFeverMagnet = true;
       if (id == 'life') _hasExtraLife = true;
+      if (id == 'passive_magnet') {
+        _hasImprovedMagnet = true;
+        prefs.setBool('zen_passive_magnet_${user.uid}', true);
+      }
+      if (id == 'passive_insurance') {
+        _hasLifeInsurance = true;
+        prefs.setBool('zen_passive_insurance_${user.uid}', true);
+      }
     });
 
     await _loadZenProfile();
@@ -532,6 +639,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       _isCacaCatchGameOver = false;
       _isInvadersGameOver = false;
     });
+    _updateMusicPlayback();
   }
 
   void _exitToMenu() {
@@ -542,6 +650,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     setState(() {
       _activeGame = ActiveGame.selectMenu;
     });
+    _updateMusicPlayback();
   }
 
   void _exitToZen() {
@@ -552,12 +661,14 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     setState(() {
       _activeGame = ActiveGame.none;
     });
+    _updateMusicPlayback();
   }
 
   // ==========================================
   // --- MINIJUEGO 1: CACA CATCH (ATRACA) ---
   // ==========================================
   void _startCacaCatch() {
+    _onGameStarted();
     _stopCacaCatch();
     setState(() {
       _score = 0;
@@ -571,6 +682,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       
       _isFeverMode = false;
       _feverTicksRemaining = 0;
+      _isSodaFrenzy = false;
+      _sodaFrenzyTicksRemaining = 0;
       _hasSoapShield = _hasInitialSoapShield;
       _soapShieldTicksRemaining = _hasInitialSoapShield ? 150 : 0;
       _hasInitialSoapShield = false; // consumido
@@ -615,11 +728,23 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     final rand = Random();
 
     // Lógica del imán de caca
-    if (_isMagnetActive) {
+    if (_isMagnetActive || _isSodaFrenzy) {
       for (var item in _catchItems) {
-        if (item.type == CatchItemType.poop || item.type == CatchItemType.goldenPoop || item.type == CatchItemType.paper) {
-          item.x += (_toiletX - item.x) * 0.045 * dt * 33.3; // atracción magnética
+        if (item.type == CatchItemType.poop || item.type == CatchItemType.goldenPoop || item.type == CatchItemType.paper || item.type == CatchItemType.soda) {
+          double attractionSpeed = _isSodaFrenzy ? 0.075 : (_hasImprovedMagnet ? 0.065 : 0.045);
+          item.x += (_toiletX - item.x) * attractionSpeed * dt * 33.3; // atracción magnética
         }
+      }
+    }
+
+    // Lógica de la Soda Frenesí
+    if (_isSodaFrenzy) {
+      _sodaFrenzyTicksRemaining--;
+      if (_sodaFrenzyTicksRemaining <= 0) {
+        _isSodaFrenzy = false;
+      }
+      if (_sodaFrenzyTicksRemaining % 6 == 0) {
+        _triggerFlash(Colors.cyanAccent.withAlpha(20), 4);
       }
     }
 
@@ -662,22 +787,30 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         }
       } else {
         final rVal = rand.nextDouble();
-        if (rVal < 0.55) {
+        if (rVal < 0.50) {
           type = CatchItemType.poop;
           icon = _equippedSkin;
           color = Colors.brown;
-        } else if (rVal < 0.70) {
+        } else if (rVal < 0.65) {
           type = CatchItemType.paper;
           icon = '🧻';
           color = Colors.white;
-        } else if (rVal < 0.88) {
+        } else if (rVal < 0.82) {
           type = CatchItemType.bacteria;
           icon = '👾';
           color = Colors.purpleAccent;
-        } else if (rVal < 0.96) {
+        } else if (rVal < 0.88) {
           type = CatchItemType.soap;
           icon = '🧼';
           color = Colors.blueAccent;
+        } else if (rVal < 0.92) {
+          type = CatchItemType.soda;
+          icon = '⚡';
+          color = Colors.cyanAccent;
+        } else if (rVal < 0.95) {
+          type = CatchItemType.chlorineBomb;
+          icon = '💣';
+          color = Colors.redAccent;
         } else {
           type = CatchItemType.goldenPoop;
           icon = '⭐';
@@ -764,11 +897,11 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         _poopsCaughtConsecutively = 0;
       }
       
-      final pointsGained = 1 * _comboMultiplier;
+      final pointsGained = 1 * _comboMultiplier * (_isSodaFrenzy ? 2 : 1);
       _score += pointsGained;
-      _spawnFloatingText(px, py, '+$pointsGained', Colors.brown[300]!);
+      _spawnFloatingText(px, py, '+$pointsGained', _isSodaFrenzy ? Colors.cyanAccent : Colors.brown[300]!);
       _saveHighScore('caca_catch', _score);
-      _spawnParticles(px, py, '💦', 5);
+      _spawnParticles(px, py, _isSodaFrenzy ? '⚡' : '💦', 5);
 
       final user = _authService.currentUser;
       if (user != null && _score >= 50) {
@@ -776,7 +909,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       }
     } else if (item.type == CatchItemType.paper) {
       HapticFeedback.mediumImpact();
-      final pointsGained = 3 * _comboMultiplier;
+      final pointsGained = 3 * _comboMultiplier * (_isSodaFrenzy ? 2 : 1);
       _score += pointsGained;
       _spawnFloatingText(px, py, '+$pointsGained', Colors.white);
       _saveHighScore('caca_catch', _score);
@@ -787,7 +920,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         _lives++;
         _spawnFloatingText(px, py, '+1 Vida ❤️', Colors.redAccent);
       } else {
-        final pointsGained = 5 * _comboMultiplier;
+        final pointsGained = 5 * _comboMultiplier * (_isSodaFrenzy ? 2 : 1);
         _score += pointsGained;
         _spawnFloatingText(px, py, '+$pointsGained', Colors.blueAccent);
         _saveHighScore('caca_catch', _score);
@@ -798,7 +931,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       _spawnParticles(px, py, '🫧', 8);
     } else if (item.type == CatchItemType.goldenPoop) {
       HapticFeedback.heavyImpact();
-      final pointsGained = 15 * _comboMultiplier;
+      final pointsGained = 15 * _comboMultiplier * (_isSodaFrenzy ? 2 : 1);
       _score += pointsGained;
       _spawnFloatingText(px, py, '+$pointsGained ✨', Colors.amberAccent, fontSize: 20);
       _saveHighScore('caca_catch', _score);
@@ -807,6 +940,36 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       _triggerFlash(Colors.amber.withAlpha(120), 12);
       _triggerShake(6.0, 12);
       _spawnParticles(px, py, '⭐', 15);
+    } else if (item.type == CatchItemType.soda) {
+      HapticFeedback.heavyImpact();
+      _isSodaFrenzy = true;
+      _sodaFrenzyTicksRemaining = 200; // ~6 segundos
+      _triggerFlash(Colors.cyanAccent.withAlpha(100), 10);
+      _triggerShake(4.0, 10);
+      _spawnParticles(px, py, '⚡', 12);
+      _spawnFloatingText(px, py, '¡SODA FRENESÍ! ⚡', Colors.cyanAccent, fontSize: 18);
+    } else if (item.type == CatchItemType.chlorineBomb) {
+      HapticFeedback.heavyImpact();
+      _triggerFlash(Colors.white.withAlpha(120), 12);
+      _triggerShake(8.0, 15);
+      _spawnParticles(px, py, '💥', 15);
+      
+      // Eliminar bacterias
+      int bacteriaCount = 0;
+      for (var catchItem in _catchItems) {
+        if (catchItem.type == CatchItemType.bacteria) {
+          bacteriaCount++;
+          _spawnParticles(catchItem.x * _gameWidth, catchItem.y * _gameHeight, '🫧', 5);
+        }
+      }
+      _catchItems.removeWhere((i) => i.type == CatchItemType.bacteria);
+      
+      _comboMultiplier = 1;
+      _poopsCaughtConsecutively = 0;
+      _spawnFloatingText(px, py, 'BOMBA DE CLORO 💣', Colors.redAccent, fontSize: 16);
+      if (bacteriaCount > 0) {
+        _spawnFloatingText(_gameWidth / 2, _gameHeight * 0.4, '¡$bacteriaCount bacterias desinfectadas! 🫧', Colors.greenAccent, fontSize: 14);
+      }
     } else if (item.type == CatchItemType.bacteria) {
       if (_hasSoapShield) {
         _hasSoapShield = false;
@@ -842,6 +1005,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   // --- MINIJUEGO 2: FLAPPY POOP 💩🕊️ ---
   // ==========================================
   void _startFlappyPoop() {
+    _onGameStarted();
     _stopFlappyPoop();
     setState(() {
       _score = 0;
@@ -853,6 +1017,9 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       _particles.clear();
       _shakeTicks = 0;
       _flashColor = null;
+      
+      _hasFlappyShield = _hasInitialSoapShield || _hasLifeInsurance;
+      _hasInitialSoapShield = false; // consumido
 
       // Variables de juego profesional
       _lastTickTime = DateTime.now();
@@ -881,6 +1048,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       x: startX,
       gapY: gapY,
       gapHeight: 125.0,
+      hasStar: rand.nextDouble() < 0.40,
     ));
   }
 
@@ -906,12 +1074,15 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
 
       // Partículas estela de olor (cola de la caca en _flappyX)
       if (randPercent(25)) {
+        String particleEmoji = _equippedSkin == '🌈' 
+            ? ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣'][Random().nextInt(6)]
+            : (_equippedSkin == '🦄' ? '✨' : '💨');
         _particles.add(GameParticle(
           x: _flappyX - 10,
           y: _flappyY + (Random().nextDouble() * 10 - 5),
           vx: -1.8 - Random().nextDouble() * 1.5,
           vy: Random().nextDouble() * 0.8 - 0.4,
-          emoji: '💨',
+          emoji: particleEmoji,
           scale: 0.4 + Random().nextDouble() * 0.4,
           lifeTime: 8 + Random().nextInt(6),
         ));
@@ -941,8 +1112,37 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
             _flappyY + cacaRadius > pipe.gapY + pipe.gapHeight;
 
         if (hitTop || hitBottom) {
-          _handleFlappyGameOver();
-          break;
+          if (_hasFlappyShield) {
+            _hasFlappyShield = false;
+            HapticFeedback.heavyImpact();
+            _triggerFlash(Colors.blueAccent.withAlpha(80), 8);
+            _triggerShake(4.0, 10);
+            _spawnParticles(cacaX, _flappyY, '🫧', 15);
+            _spawnFloatingText(cacaX, _flappyY - 20, '¡ESCUDO ROTO! 🫧', Colors.blue);
+            pipe.passed = true;
+            pipe.x = -100; // Destruir la tubería
+          } else {
+            _handleFlappyGameOver();
+            break;
+          }
+        }
+
+        // Colisión con estrella
+        if (pipe.hasStar && !pipe.starCollected) {
+          final starX = pipe.x + 27.5;
+          final starY = pipe.gapY + pipe.gapHeight / 2;
+          final dist = sqrt(pow(cacaX - starX, 2) + pow(_flappyY - starY, 2));
+          if (dist < 26.0) {
+            pipe.starCollected = true;
+            HapticFeedback.mediumImpact();
+            _spawnParticles(starX, starY, '⭐', 8, speed: 4.0);
+            _spawnFloatingText(starX, starY - 15, '+5 K\$', Colors.amber, fontSize: 16.0);
+            
+            final user = _authService.currentUser;
+            if (user != null) {
+              _dbService.addKcoins(user.uid, 5);
+            }
+          }
         }
 
         // Puntos
@@ -1005,6 +1205,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   // --- MINIJUEGO 3: TOILET JUMP 💩jump ---
   // ==========================================
   void _startToiletJump() {
+    _onGameStarted();
     _stopToiletJump();
     setState(() {
       _score = 0;
@@ -1031,6 +1232,9 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       _hasJetpack = _hasInitialSoapShield;
       _jetpackTicksRemaining = _hasInitialSoapShield ? 60 : 0;
       _hasInitialSoapShield = false; // consumido
+      
+      _hasBalloon = false;
+      _balloonTicksRemaining = 0;
 
       // Variables de juego profesional
       _lastTickTime = DateTime.now();
@@ -1063,10 +1267,12 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
     final rVal = rand.nextDouble();
     PlatformType type = PlatformType.normal;
 
-    if (rVal < 0.15 && targetY < 150) {
+    if (rVal < 0.12 && targetY < 150) {
       type = PlatformType.fragile;
-    } else if (rVal < 0.35 && targetY < 200) {
+    } else if (rVal < 0.28 && targetY < 200) {
       type = PlatformType.moving;
+    } else if (rVal < 0.38 && targetY < -100) {
+      type = PlatformType.superSpring;
     }
 
     ItemType item = ItemType.none;
@@ -1076,6 +1282,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         item = ItemType.spring;
       } else if (iVal < 0.14 && targetY < -100) {
         item = ItemType.jetpack;
+      } else if (iVal < 0.22 && targetY < 0) {
+        item = ItemType.balloon;
       }
     }
 
@@ -1119,8 +1327,17 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         p.scaleY += (1.0 - p.scaleY) * 0.15 * dt * 33.3;
       }
 
-      // Lógica de Jetpack
-      if (_hasJetpack) {
+      // Lógica de Globo de Gas
+      if (_hasBalloon) {
+        _balloonTicksRemaining--;
+        _jumpVy = -6.5; // Ascenso suave y seguro
+        if (randPercent(15)) {
+          _spawnParticles(_jumpX, _jumpY + 12, '🎈', 1, speed: 1.0);
+        }
+        if (_balloonTicksRemaining <= 0) {
+          _hasBalloon = false;
+        }
+      } else if (_hasJetpack) {
         _jetpackTicksRemaining--;
         _jumpVy = -13.0;
         // Partículas propulsión agua
@@ -1132,6 +1349,24 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
       } else {
         // Gravedad normal
         _jumpVy += 0.32 * dt * 33.3;
+      }
+
+      // Trail visual para skins premium en Toilet Jump
+      if (randPercent(20)) {
+        String trailEmoji = _equippedSkin == '🌈'
+            ? ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣'][Random().nextInt(6)]
+            : (_equippedSkin == '🦄' ? '✨' : '');
+        if (trailEmoji.isNotEmpty) {
+          _particles.add(GameParticle(
+            x: _jumpX,
+            y: _jumpY + 12,
+            vx: Random().nextDouble() * 1.0 - 0.5,
+            vy: 1.0 + Random().nextDouble() * 1.5,
+            emoji: trailEmoji,
+            scale: 0.4 + Random().nextDouble() * 0.4,
+            lifeTime: 8 + Random().nextInt(6),
+          ));
+        }
       }
 
       _jumpY += _jumpVy * dt * 33.3;
@@ -1199,8 +1434,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
             _saveHighScore('toilet_jump', _score);
             HapticFeedback.mediumImpact();
           } else {
-            // Si choca por debajo/lados y no tiene Jetpack, muere
-            if (!_hasJetpack) {
+            // Si choca por debajo/lados y no tiene Jetpack ni Globo, muere
+            if (!_hasJetpack && !_hasBalloon) {
               _handleToiletJumpGameOver();
               return;
             }
@@ -1208,23 +1443,31 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         }
       }
 
-      // Colisión con plataformas (solo cayendo y sin jetpack)
-      if (_jumpVy > 0 && !_hasJetpack) {
+      // Colisión con plataformas (solo cayendo y sin jetpack ni globo)
+      if (_jumpVy > 0 && !_hasJetpack && !_hasBalloon) {
         const cacaRadius = 15.0;
         final cacaBottom = _jumpY + cacaRadius;
 
         for (int i = 0; i < _jumpPlatforms.length; i++) {
           final p = _jumpPlatforms[i];
-          if (p.broken) continue;
-
-          bool overlapX = _jumpX + 5 >= p.x && _jumpX - 5 <= p.x + p.width;
-          bool overlapY = cacaBottom >= p.y - 4.0 && cacaBottom <= p.y + 10.0;
-
-          if (overlapX && overlapY) {
+          if (_jumpX + cacaRadius > p.x && 
+              _jumpX - cacaRadius < p.x + p.width && 
+              cacaBottom > p.y && 
+              cacaBottom < p.y + 15) {
+            
             if (p.type == PlatformType.fragile) {
               p.broken = true; // Se rompe al tocarla
               _spawnParticles(p.x + p.width / 2, p.y, '🟫', 6, speed: 2.0);
               HapticFeedback.vibrate();
+            } else if (p.type == PlatformType.superSpring) {
+              _jumpVy = -16.5; // Salto súper gigante
+              _cacaScaleY = 0.3;
+              _cacaScaleX = 1.7;
+              _triggerFlash(Colors.redAccent.withAlpha(40), 6);
+              _triggerShake(3.0, 8);
+              _spawnParticles(p.x + p.width / 2, p.y, '💥', 10, speed: 4.0);
+              _spawnFloatingText(_jumpX, _jumpY - 20, '¡SUPER IMPULSO! 💥', Colors.redAccent);
+              HapticFeedback.heavyImpact();
             } else {
               _jumpVy = -8.5; // rebote normal
               _cacaScaleY = 0.6;
@@ -1249,6 +1492,14 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                 _triggerFlash(Colors.blueAccent.withAlpha(60), 8);
                 _spawnParticles(_jumpX, _jumpY, '💦', 12);
                 _spawnFloatingText(_jumpX, _jumpY - 20, '¡JETPACK DE AGUA! 💦', Colors.blueAccent);
+                HapticFeedback.heavyImpact();
+              } else if (p.item == ItemType.balloon && !p.itemUsed) {
+                p.itemUsed = true;
+                _hasBalloon = true;
+                _balloonTicksRemaining = 130; // ~4 segundos
+                _triggerFlash(Colors.greenAccent.withAlpha(60), 8);
+                _spawnParticles(_jumpX, _jumpY, '🎈', 12);
+                _spawnFloatingText(_jumpX, _jumpY - 20, '¡GLOBO DE HELIO! 🎈', Colors.greenAccent);
                 HapticFeedback.heavyImpact();
               }
             }
@@ -1463,9 +1714,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
             child: GestureDetector(
               onTap: () {
                 HapticFeedback.lightImpact();
-                setState(() {
-                  _isPlayingSound = !_isPlayingSound;
-                });
+                _toggleMusic(!_isMusicEnabled);
               },
               child: Container(
                 width: 130,
@@ -1474,7 +1723,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                   shape: BoxShape.circle,
                   color: Colors.brown[900]!.withAlpha(38),
                   border: Border.all(
-                    color: _isPlayingSound ? Colors.amberAccent : Colors.brown[900]!,
+                    color: _isMusicEnabled ? Colors.amberAccent : Colors.brown[900]!,
                     width: 2,
                   ),
                 ),
@@ -1482,10 +1731,10 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                   child: AnimatedBuilder(
                     animation: _soundAnimController,
                     builder: (context, child) {
-                      final val = _isPlayingSound ? _soundAnimController.value : 0.0;
+                      final val = _isMusicEnabled ? _soundAnimController.value : 0.0;
                       return Icon(
-                        _isPlayingSound ? Icons.music_note_rounded : Icons.play_arrow_rounded,
-                        color: _isPlayingSound ? Colors.amberAccent : Colors.grey[600],
+                        _isMusicEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
+                        color: _isMusicEnabled ? Colors.amberAccent : Colors.grey[600],
                         size: 40 + (val * 10),
                       );
                     },
@@ -1497,37 +1746,50 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         ),
         const SizedBox(height: 8),
         const Text(
-          'Toca el círculo para reproducir ruido blanco',
+          'Toca el círculo para pausar o reproducir la música',
           style: TextStyle(color: Colors.grey, fontSize: 11),
         ),
         const SizedBox(height: 12),
 
-        // Selector de Sonido
+        // Checkbox para activar/desactivar la música
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: const Color(0xFF121212),
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: _isMusicEnabled ? Colors.amberAccent.withAlpha(76) : Colors.transparent,
+              width: 1,
+            ),
           ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _selectedSound,
-              dropdownColor: const Color(0xFF1E1E1E),
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-              icon: const Icon(Icons.arrow_drop_down, color: Colors.grey),
-              onChanged: (String? val) {
-                if (val != null) {
-                  setState(() {
-                    _selectedSound = val;
-                  });
-                }
-              },
-              items: _soundsList.map<DropdownMenuItem<String>>((String value) {
-                return DropdownMenuItem<String>(
-                  value: value,
-                  child: Text(value),
-                );
-              }).toList(),
+          child: InkWell(
+            onTap: () {
+              _toggleMusic(!_isMusicEnabled);
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Checkbox(
+                  value: _isMusicEnabled,
+                  activeColor: Colors.amberAccent,
+                  checkColor: Colors.black,
+                  onChanged: (bool? val) {
+                    if (val != null) {
+                      _toggleMusic(val);
+                    }
+                  },
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  'Música de fondo Zen',
+                  style: TextStyle(
+                    color: _isMusicEnabled ? Colors.white : Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
             ),
           ),
         ),
@@ -1763,7 +2025,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                   onPanUpdate: (details) {
                     if (_isPaused || _isCacaCatchGameOver) return;
                     setState(() {
-                      _toiletX = (_toiletX + details.delta.dx / _gameWidth).clamp(0.08, 0.92);
+                      double multiplier = _isSodaFrenzy ? 1.8 : 1.0;
+                      _toiletX = (_toiletX + (details.delta.dx * multiplier) / _gameWidth).clamp(0.08, 0.92);
                     });
                   },
                   child: Container(
@@ -1789,6 +2052,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                                 toiletX: _toiletX,
                                 particles: _particles,
                                 hasSoapShield: _hasSoapShield,
+                                isSodaFrenzy: _isSodaFrenzy,
                                 isFeverMode: _isFeverMode,
                                 width: _gameWidth,
                                 height: _gameHeight,
@@ -1912,6 +2176,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                                 highScore: _highScoreFlappyPoop,
                                 equippedSkin: _equippedSkin,
                                 floatingTexts: _floatingTexts,
+                                hasShield: _hasFlappyShield,
                               ),
                             ),
                           ),
@@ -2019,6 +2284,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                                 scaleX: _cacaScaleX,
                                 scaleY: _cacaScaleY,
                                 hasJetpack: _hasJetpack,
+                                hasBalloon: _hasBalloon,
                                 equippedSkin: _equippedSkin,
                                 floatingTexts: _floatingTexts,
                               ),
@@ -2097,6 +2363,20 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         'color': Colors.redAccent,
       },
       {
+        'skin': '🌈',
+        'name': 'Arcoíris',
+        'cost': 300,
+        'description': 'Estela de colores brillantes.',
+        'color': Colors.purple,
+      },
+      {
+        'skin': '🦄',
+        'name': 'Unicornio',
+        'cost': 400,
+        'description': 'Destellos mágicos rosados.',
+        'color': Colors.pink,
+      },
+      {
         'skin': '👽',
         'name': 'Alien',
         'cost': 200,
@@ -2118,7 +2398,8 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         'icon': '🧼',
         'name': 'Escudo Burbuja',
         'cost': 30,
-        'description': 'Caca Catch: Escudo de jabón por 4s. Toilet Jump: 2s de Jetpack inicial.',
+        'description': 'Caca Catch: Escudo de jabón por 4s. Toilet Jump/Flappy: Escudo protector inicial.',
+        'games': ['Caca Catch', 'Flappy Poop', 'Toilet Jump'],
       },
       {
         'id': 'spring',
@@ -2126,6 +2407,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         'name': 'Súper Impulso',
         'cost': 40,
         'description': 'Toilet Jump: Salto inicial gigante para subir a las nubes rápidamente.',
+        'games': ['Toilet Jump'],
       },
       {
         'id': 'magnet',
@@ -2133,6 +2415,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         'name': 'Imán de Caca',
         'cost': 50,
         'description': 'Caca Catch: Atrae todas las cacas, estrellas y rollos automáticamente.',
+        'games': ['Caca Catch'],
       },
       {
         'id': 'life',
@@ -2140,6 +2423,23 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         'name': 'Vida Extra',
         'cost': 60,
         'description': 'Caca Catch: Inicias con 4 vidas en lugar de 3.',
+        'games': ['Caca Catch'],
+      },
+      {
+        'id': 'passive_magnet',
+        'icon': '🧲✨',
+        'name': 'Imán Pasivo',
+        'cost': 150,
+        'description': 'Caca Catch: Atrae cacas permanentemente más rápido y con mayor rango.',
+        'games': ['Caca Catch'],
+      },
+      {
+        'id': 'passive_insurance',
+        'icon': '🛡️',
+        'name': 'Seguro de Vida',
+        'cost': 250,
+        'description': 'Flappy/Invaders: Inicias siempre con un escudo protector o vida extra gratis.',
+        'games': ['Flappy Poop', 'Poop Invaders'],
       },
     ];
 
@@ -2319,115 +2619,176 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                   style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.0),
                 ),
               ),
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: powerupsList.length,
-                itemBuilder: (context, index) {
-                  final item = powerupsList[index];
-                  final id = item['id'] as String;
-                  final cost = item['cost'] as int;
-                  final iconStr = item['icon'] as String;
-
-                  bool isAlreadyPurchased = false;
-                  if (id == 'shield' && _hasInitialSoapShield) isAlreadyPurchased = true;
-                  if (id == 'spring' && _hasInitialSpring) isAlreadyPurchased = true;
-                  if (id == 'magnet' && _hasFeverMagnet) isAlreadyPurchased = true;
-                  if (id == 'life' && _hasExtraLife) isAlreadyPurchased = true;
-
-                  return Card(
+              // Selector desplegable para filtrar por juego
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12.0),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  decoration: BoxDecoration(
                     color: const Color(0xFF161616),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(
-                        color: isAlreadyPurchased 
-                            ? Colors.cyanAccent.withAlpha(120) 
-                            : Colors.brown[900]!.withAlpha(80),
-                        width: 1,
-                      ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.cyanAccent.withAlpha(80), width: 1),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: _selectedGameFilter,
+                      dropdownColor: const Color(0xFF161616),
+                      icon: const Icon(Icons.filter_list_rounded, color: Colors.cyanAccent),
+                      isExpanded: true,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                      onChanged: (String? newValue) {
+                        if (newValue != null) {
+                          setState(() {
+                            _selectedGameFilter = newValue;
+                          });
+                        }
+                      },
+                      items: const [
+                        DropdownMenuItem(value: 'todos', child: Text('Mostrar todos los potenciadores')),
+                        DropdownMenuItem(value: 'caca_catch', child: Text('Filtrar por: Caca Catch 🚽')),
+                        DropdownMenuItem(value: 'flappy_poop', child: Text('Filtrar por: Flappy Poop 💩🕊️')),
+                        DropdownMenuItem(value: 'toilet_jump', child: Text('Filtrar por: Toilet Jump 💩jump')),
+                        DropdownMenuItem(value: 'poop_invaders', child: Text('Filtrar por: Poop Invaders 👾')),
+                      ],
                     ),
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 22,
-                            backgroundColor: isAlreadyPurchased 
-                                ? Colors.cyanAccent.withAlpha(30)
-                                : Colors.grey[900],
-                            child: Text(
-                              iconStr,
-                              style: const TextStyle(fontSize: 22),
-                            ),
+                  ),
+                ),
+              ),
+              Builder(
+                builder: (context) {
+                  final filteredPowerups = powerupsList.where((item) {
+                    if (_selectedGameFilter == 'todos') return true;
+                    final List<String> games = List<String>.from(item['games'] ?? []);
+                    if (_selectedGameFilter == 'caca_catch' && games.contains('Caca Catch')) return true;
+                    if (_selectedGameFilter == 'flappy_poop' && games.contains('Flappy Poop')) return true;
+                    if (_selectedGameFilter == 'toilet_jump' && games.contains('Toilet Jump')) return true;
+                    if (_selectedGameFilter == 'poop_invaders' && games.contains('Poop Invaders')) return true;
+                    return false;
+                  }).toList();
+
+                  if (filteredPowerups.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20.0),
+                      child: Center(
+                        child: Text(
+                          'No hay potenciadores para este minijuego.',
+                          style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: filteredPowerups.length,
+                    itemBuilder: (context, index) {
+                      final item = filteredPowerups[index];
+                      final id = item['id'] as String;
+                      final cost = item['cost'] as int;
+                      final iconStr = item['icon'] as String;
+
+                      bool isAlreadyPurchased = false;
+                      if (id == 'shield' && _hasInitialSoapShield) isAlreadyPurchased = true;
+                      if (id == 'spring' && _hasInitialSpring) isAlreadyPurchased = true;
+                      if (id == 'magnet' && _hasFeverMagnet) isAlreadyPurchased = true;
+                      if (id == 'life' && _hasExtraLife) isAlreadyPurchased = true;
+
+                      return Card(
+                        color: const Color(0xFF161616),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(
+                            color: isAlreadyPurchased 
+                                ? Colors.cyanAccent.withAlpha(120) 
+                                : Colors.brown[900]!.withAlpha(80),
+                            width: 1,
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item['name'] as String,
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 10.0),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 22,
+                                backgroundColor: isAlreadyPurchased 
+                                    ? Colors.cyanAccent.withAlpha(30)
+                                    : Colors.grey[900],
+                                child: Text(
+                                  iconStr,
+                                  style: const TextStyle(fontSize: 22),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  item['description'] as String,
-                                  style: TextStyle(color: Colors.grey[500], fontSize: 10),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          SizedBox(
-                            width: 82,
-                            height: 32,
-                            child: ElevatedButton(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: isAlreadyPurchased
-                                    ? Colors.cyanAccent.withAlpha(40)
-                                    : Colors.cyan[800],
-                                foregroundColor: Colors.white,
-                                padding: EdgeInsets.zero,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                elevation: 0,
                               ),
-                              onPressed: isAlreadyPurchased ? null : () => _buyPowerup(id, cost),
-                              child: isAlreadyPurchased
-                                  ? const Text(
-                                      'ACTIVADO',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        color: Colors.cyanAccent,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    )
-                                  : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.monetization_on_rounded, size: 10, color: Colors.amber),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          '$cost K\$',
-                                          style: const TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['name'] as String,
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                                     ),
-                            ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      item['description'] as String,
+                                      style: TextStyle(color: Colors.grey[500], fontSize: 10),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              SizedBox(
+                                width: 82,
+                                height: 32,
+                                child: ElevatedButton(
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isAlreadyPurchased
+                                        ? Colors.cyanAccent.withAlpha(40)
+                                        : Colors.cyan[800],
+                                    foregroundColor: Colors.white,
+                                    padding: EdgeInsets.zero,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  onPressed: isAlreadyPurchased ? null : () => _buyPowerup(id, cost),
+                                  child: isAlreadyPurchased
+                                      ? const Text(
+                                          'ACTIVADO',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            color: Colors.cyanAccent,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        )
+                                      : Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(Icons.monetization_on_rounded, size: 10, color: Colors.amber),
+                                            const SizedBox(width: 3),
+                                            Text(
+                                              '$cost K\$',
+                                              style: const TextStyle(
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   );
-                },
+                }
               ),
               const SizedBox(height: 10),
             ],
@@ -2441,17 +2802,31 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
   // --- MINIJUEGO 4: POOP INVADERS 👾 ---
   // ==========================================
   void _startPoopInvaders() {
+    _onGameStarted();
     _stopPoopInvaders();
     setState(() {
       _score = 0;
-      _lives = 3;
+      _lives = _hasLifeInsurance ? 4 : 3;
       _invadersShipX = 0.5;
+      _invadersShipY = 0.85;
       _invaderLasers.clear();
       _invaderEnemies.clear();
       _invaderSpawnProb = 0.035;
       _invaderSpeed = 1.3;
       _invaderShootCooldown = 0;
       _isInvadersGameOver = false;
+      
+      _hasTripleShot = false;
+      _tripleShotTicksRemaining = 0;
+      _hasBurstShot = false;
+      _burstShotTicksRemaining = 0;
+      _isBossActive = false;
+      _bossX = 0.5;
+      _bossVx = 1.2;
+      _bossHp = 0;
+      _bossMaxHp = 10;
+      _bossShootCooldown = 0;
+      _invaderItems.clear();
 
       _particles.clear();
       _shakeTicks = 0;
@@ -2491,15 +2866,55 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         _invaderShootCooldown--;
       } else {
         // Disparar chorro de agua automáticamente hacia arriba
-        _invaderLasers.add(InvaderLaser(x: _invadersShipX, y: (_gameHeight - 65.0) / _gameHeight, speed: 6.0));
-        _invaderShootCooldown = 12; // Dispara cada 12 ticks (~0.36 segundos)
-        
-        // Efecto de retroceso/partícula al disparar
-        _spawnParticles(_invadersShipX * _gameWidth, _gameHeight - 65.0, '💦', 1, speed: 2.0);
+        double shipYNorm = _invadersShipY;
+        double speedVal = _hasBurstShot ? 8.0 : 6.0;
+        int cooldownVal = _hasBurstShot ? 4 : (_hasTripleShot ? 15 : 12);
+
+        if (_hasTripleShot) {
+          _invaderLasers.add(InvaderLaser(x: _invadersShipX, y: shipYNorm, speed: speedVal, vx: 0.0, isBurst: _hasBurstShot));
+          _invaderLasers.add(InvaderLaser(x: _invadersShipX, y: shipYNorm, speed: speedVal, vx: -0.6, isBurst: _hasBurstShot));
+          _invaderLasers.add(InvaderLaser(x: _invadersShipX, y: shipYNorm, speed: speedVal, vx: 0.6, isBurst: _hasBurstShot));
+          _invaderShootCooldown = cooldownVal;
+          _spawnParticles(_invadersShipX * _gameWidth, _invadersShipY * _gameHeight, _hasBurstShot ? '🔥' : '💦', 3, speed: 2.0);
+        } else {
+          _invaderLasers.add(InvaderLaser(x: _invadersShipX, y: shipYNorm, speed: speedVal, isBurst: _hasBurstShot));
+          _invaderShootCooldown = cooldownVal;
+          _spawnParticles(_invadersShipX * _gameWidth, _invadersShipY * _gameHeight, _hasBurstShot ? '🔥' : '💦', 1, speed: 2.0);
+        }
       }
 
-      // Spawn enemigos
-      if (rand.nextDouble() < _invaderSpawnProb) {
+      // Countdown de disparo triple
+      if (_hasTripleShot) {
+        _tripleShotTicksRemaining--;
+        if (_tripleShotTicksRemaining <= 0) {
+          _hasTripleShot = false;
+        }
+      }
+
+      // Countdown de disparo ráfaga
+      if (_hasBurstShot) {
+        _burstShotTicksRemaining--;
+        if (_burstShotTicksRemaining <= 0) {
+          _hasBurstShot = false;
+        }
+      }
+
+      // Spawn jefe cada 300 puntos
+      if (_score > 0 && _score % 300 == 0 && !_isBossActive) {
+        _isBossActive = true;
+        _bossX = 0.5;
+        _bossHp = 10;
+        _bossMaxHp = 10;
+        _bossShootCooldown = 25;
+        _bossVx = 1.2;
+        _spawnFloatingText(_gameWidth / 2, _gameHeight * 0.3, '¡JEFE BACTERIA! 👑🦠', Colors.redAccent, fontSize: 20);
+        _triggerShake(5.0, 15);
+        _triggerFlash(Colors.redAccent.withAlpha(50), 10);
+      }
+
+      // Spawn enemigos normales
+      double spawnChance = _isBossActive ? 0.005 : _invaderSpawnProb;
+      if (rand.nextDouble() < spawnChance) {
         final rVal = rand.nextDouble();
         String type = '👾';
         int enemyLives = 1;
@@ -2520,21 +2935,105 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         ));
       }
 
-      // Actualizar láseres
-      for (int i = _invaderLasers.length - 1; i >= 0; i--) {
-        final laser = _invaderLasers[i];
-        laser.y -= (laser.speed * 0.03 * dt * 33.3);
-        if (laser.y < 0.0) {
-          _invaderLasers.removeAt(i);
+      // Lógica de movimiento del Jefe
+      if (_isBossActive) {
+        _bossX += _bossVx * 0.005 * dt * 33.3;
+        if (_bossX < 0.15 || _bossX > 0.85) {
+          _bossVx = -_bossVx;
+          _bossX = _bossX.clamp(0.15, 0.85);
+        }
+
+        // Ataques del Jefe
+        if (_bossShootCooldown > 0) {
+          _bossShootCooldown--;
+        } else {
+          _invaderLasers.add(InvaderLaser(x: _bossX, y: 0.18, speed: -4.0, isEnemy: true));
+          _bossShootCooldown = 35 + rand.nextInt(20);
+          _spawnParticles(_bossX * _gameWidth, 0.18 * _gameHeight, '🦠', 2, speed: 2.0);
         }
       }
 
-      // Actualizar enemigos
+      // Actualizar ítems
+      for (int i = _invaderItems.length - 1; i >= 0; i--) {
+        final item = _invaderItems[i];
+        item.y += 1.8 * 0.005 * dt * 33.3;
+        
+        final itemX = item.x * _gameWidth;
+        final itemY = item.y * _gameHeight;
+        final shipX = _invadersShipX * _gameWidth;
+        final shipY = _invadersShipY * _gameHeight;
+        
+        if ((itemX - shipX).abs() < 24 && (itemY - shipY).abs() < 24) {
+          _invaderItems.removeAt(i);
+          HapticFeedback.heavyImpact();
+          if (item.type == 'triple') {
+            _hasTripleShot = true;
+            _tripleShotTicksRemaining = 200;
+            _triggerFlash(Colors.cyanAccent.withAlpha(80), 8);
+            _spawnParticles(itemX, itemY, '💧', 10);
+            _spawnFloatingText(itemX, itemY - 20, '¡DISPARO TRIPLE! 💧', Colors.cyanAccent, fontSize: 16);
+          } else if (item.type == 'burst') {
+            _hasBurstShot = true;
+            _burstShotTicksRemaining = 150;
+            _triggerFlash(Colors.amber.withAlpha(80), 8);
+            _spawnParticles(itemX, itemY, '🔥', 10);
+            _spawnFloatingText(itemX, itemY - 20, '¡RÁFAGA FUEGO! 🔫🔥', Colors.amberAccent, fontSize: 16);
+          } else if (item.type == 'bomb') {
+            _triggerFlash(Colors.orangeAccent.withAlpha(140), 15);
+            _triggerShake(12.0, 20);
+            _spawnParticles(itemX, itemY, '💥', 15, speed: 5.0);
+            _spawnFloatingText(itemX, itemY - 20, '¡BOMBA TÁCTICA! 💣', Colors.redAccent, fontSize: 18);
+            _executeBombExplosion();
+          }
+          continue;
+        }
+        
+        if (item.y >= 0.95) {
+          _invaderItems.removeAt(i);
+        }
+      }
+
+      // Actualizar láseres (del jugador y enemigos)
+      for (int i = _invaderLasers.length - 1; i >= 0; i--) {
+        final laser = _invaderLasers[i];
+        if (laser.isEnemy) {
+          // Mover hacia abajo
+          laser.y -= (laser.speed * 0.03 * dt * 33.3);
+          
+          final laserX = laser.x * _gameWidth;
+          final laserY = laser.y * _gameHeight;
+          final shipX = _invadersShipX * _gameWidth;
+          final shipY = _invadersShipY * _gameHeight;
+          
+          if ((laserX - shipX).abs() < 24 && (laserY - shipY).abs() < 24) {
+            _invaderLasers.removeAt(i);
+            _triggerFlash(Colors.red.withAlpha(80), 5);
+            HapticFeedback.vibrate();
+            _lives--;
+            _spawnFloatingText(shipX, shipY - 20, '💔 -1 Vida', Colors.redAccent, fontSize: 14);
+            
+            if (_lives <= 0) {
+              _handleInvadersGameOver();
+            }
+          } else if (laser.y >= 0.95) {
+            _invaderLasers.removeAt(i);
+          }
+        } else {
+          // Mover hacia arriba
+          laser.y -= (laser.speed * 0.03 * dt * 33.3);
+          laser.x += laser.vx * 0.01 * dt * 33.3;
+          
+          if (laser.y < 0.0 || laser.y > 1.0 || laser.x < 0.0 || laser.x > 1.0) {
+            _invaderLasers.removeAt(i);
+          }
+        }
+      }
+
+      // Actualizar enemigos comunes
       for (int i = _invaderEnemies.length - 1; i >= 0; i--) {
         final enemy = _invaderEnemies[i];
         enemy.y += (enemy.speed * 0.005 * dt * 33.3);
 
-        // Comprobar si llega al suelo
         if (enemy.y >= 0.88) {
           _triggerFlash(Colors.red.withAlpha(50), 5);
           HapticFeedback.vibrate();
@@ -2548,18 +3047,19 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
           continue;
         }
 
-        // Colisión con láseres
+        // Colisión con láseres del jugador
         final enemyX = enemy.x * _gameWidth;
         final enemyY = enemy.y * _gameHeight;
         bool hit = false;
 
         for (int j = _invaderLasers.length - 1; j >= 0; j--) {
           final laser = _invaderLasers[j];
+          if (laser.isEnemy) continue;
+          
           final laserX = laser.x * _gameWidth;
           final laserY = laser.y * _gameHeight;
 
-          // Caja de colisión entre enemigo y láser
-          if ((laserX - enemyX).abs() < 20 && (laserY - enemyY).abs() < 24) {
+          if ((laserX - enemyX).abs() < 26 && (laserY - enemyY).abs() < 31) {
             _invaderLasers.removeAt(j);
             enemy.lives--;
             _spawnParticles(enemyX, enemyY, '💦', 4);
@@ -2570,9 +3070,26 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
               int points = enemy.type == '👾' ? 10 : (enemy.type == '🦠' ? 25 : 50);
               _score += points;
               _saveHighScore('poop_invaders', _score);
+              final user = _authService.currentUser;
+              if (user != null && _score >= 100) {
+                _dbService.unlockAchievement(user.uid, 'invaders_expert', user.displayName);
+              }
               _spawnParticles(enemyX, enemyY, '💥', 8);
               _spawnFloatingText(enemyX, enemyY - 10, '+$points 💥', Colors.greenAccent);
               
+              if (rand.nextDouble() < 0.15) {
+                final rItem = rand.nextDouble();
+                final String itemType;
+                if (rItem < 0.45) {
+                  itemType = 'triple';
+                } else if (rItem < 0.80) {
+                  itemType = 'burst';
+                } else {
+                  itemType = 'bomb';
+                }
+                _invaderItems.add(InvaderItem(x: enemy.x, y: enemy.y, type: itemType));
+              }
+
               // Dificultad progresiva
               if (_score > 0 && _score % 150 == 0) {
                 _invaderSpeed += 0.15;
@@ -2586,6 +3103,50 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
 
         if (hit) {
           _invaderEnemies.removeAt(i);
+        }
+      }
+
+      // Colisión del Jefe con láseres del jugador
+      if (_isBossActive) {
+        final bossXReal = _bossX * _gameWidth;
+        final bossYReal = 0.15 * _gameHeight;
+        
+        for (int j = _invaderLasers.length - 1; j >= 0; j--) {
+          final laser = _invaderLasers[j];
+          if (laser.isEnemy) continue;
+          
+          final laserX = laser.x * _gameWidth;
+          final laserY = laser.y * _gameHeight;
+          
+          if ((laserX - bossXReal).abs() < 36 && (laserY - bossYReal).abs() < 36) {
+            _invaderLasers.removeAt(j);
+            _bossHp--;
+            _spawnParticles(bossXReal, bossYReal, '💦', 5);
+            HapticFeedback.lightImpact();
+            _triggerShake(2.0, 4);
+            
+            if (_bossHp <= 0) {
+              _isBossActive = false;
+              _score += 100;
+              _saveHighScore('poop_invaders', _score);
+              final user = _authService.currentUser;
+              if (user != null && _score >= 100) {
+                _dbService.unlockAchievement(user.uid, 'invaders_expert', user.displayName);
+              }
+              _triggerFlash(Colors.greenAccent.withAlpha(120), 15);
+              _triggerShake(8.0, 25);
+              _spawnParticles(bossXReal, bossYReal, '💥', 25, speed: 6.0);
+              _spawnFloatingText(bossXReal, bossYReal, '+100 👑', Colors.greenAccent, fontSize: 20);
+              
+              if (user != null) {
+                _dbService.addKcoins(user.uid, 20);
+                _spawnFloatingText(bossXReal, bossYReal + 20, '+20 K\$ 💰', Colors.amberAccent, fontSize: 16.0);
+              }
+              final bossItemType = rand.nextBool() ? 'bomb' : 'burst';
+              _invaderItems.add(InvaderItem(x: _bossX, y: 0.15, type: bossItemType));
+            }
+            break;
+          }
         }
       }
 
@@ -2617,6 +3178,62 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
         _spawnFloatingText(_gameWidth / 2, _gameHeight / 2, '¡Ganaste $kcoinsEarned K\$! 💰', Colors.amberAccent, fontSize: 20);
       }
     }
+  }
+
+  void _executeBombExplosion() {
+    HapticFeedback.vibrate();
+    int totalEnemiesDestroyed = 0;
+    int pointsGained = 0;
+
+    for (var enemy in _invaderEnemies) {
+      final enemyX = enemy.x * _gameWidth;
+      final enemyY = enemy.y * _gameHeight;
+      int points = enemy.type == '👾' ? 10 : (enemy.type == '🦠' ? 25 : 50);
+      pointsGained += points;
+      totalEnemiesDestroyed++;
+
+      _spawnParticles(enemyX, enemyY, '💥', 8);
+      _spawnParticles(enemyX, enemyY, '🔥', 4);
+      _spawnFloatingText(enemyX, enemyY - 10, '+$points 💥', Colors.greenAccent);
+    }
+    _invaderEnemies.clear();
+
+    if (_isBossActive) {
+      final bossXReal = _bossX * _gameWidth;
+      final bossYReal = 0.15 * _gameHeight;
+      const damage = 5;
+      _bossHp -= damage;
+      _spawnParticles(bossXReal, bossYReal, '💥', 12, speed: 4.0);
+      _spawnFloatingText(bossXReal, bossYReal, '-$damage HP 👑💥', Colors.redAccent, fontSize: 18);
+      
+      if (_bossHp <= 0) {
+        _isBossActive = false;
+        pointsGained += 100;
+        _triggerFlash(Colors.greenAccent.withAlpha(120), 15);
+        _triggerShake(8.0, 25);
+        _spawnParticles(bossXReal, bossYReal, '💥', 25, speed: 6.0);
+        _spawnFloatingText(bossXReal, bossYReal, '+100 👑', Colors.greenAccent, fontSize: 20);
+        
+        final user = _authService.currentUser;
+        if (user != null) {
+          _dbService.addKcoins(user.uid, 20);
+          _spawnFloatingText(bossXReal, bossYReal + 20, '+20 K\$ 💰', Colors.amberAccent, fontSize: 16.0);
+        }
+      }
+    }
+
+    if (pointsGained > 0) {
+      setState(() {
+        _score += pointsGained;
+        _saveHighScore('poop_invaders', _score);
+      });
+      final user = _authService.currentUser;
+      if (user != null && _score >= 100) {
+        _dbService.unlockAchievement(user.uid, 'invaders_expert', user.displayName);
+      }
+    }
+
+    _spawnFloatingText(_gameWidth / 2, _gameHeight / 2, '¡LIMPIEZA TOTAL! 💣 ($totalEnemiesDestroyed)', Colors.orangeAccent, fontSize: 18);
   }
 
   Widget _buildPoopInvadersArea() {
@@ -2681,6 +3298,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                     if (_isPaused || _isInvadersGameOver) return;
                     setState(() {
                       _invadersShipX = (_invadersShipX + details.delta.dx / _gameWidth).clamp(0.08, 0.92);
+                      _invadersShipY = (_invadersShipY + details.delta.dy / _gameHeight).clamp(0.30, 0.90);
                     });
                   },
                   child: Container(
@@ -2698,6 +3316,7 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                             child: CustomPaint(
                               painter: PoopInvadersPainter(
                                 shipX: _invadersShipX,
+                                shipY: _invadersShipY,
                                 lasers: _invaderLasers,
                                 enemies: _invaderEnemies,
                                 particles: _particles,
@@ -2706,6 +3325,11 @@ class _TronoZenScreenState extends State<TronoZenScreen> with SingleTickerProvid
                                 floatingTexts: _floatingTexts,
                                 score: _score,
                                 record: _highScorePoopInvaders,
+                                isBossActive: _isBossActive,
+                                bossX: _bossX,
+                                bossHp: _bossHp,
+                                bossMaxHp: _bossMaxHp,
+                                items: _invaderItems,
                               ),
                             ),
                           ),
@@ -2782,7 +3406,7 @@ class GameParticle {
 }
 
 // --- CACA CATCH ---
-enum CatchItemType { poop, paper, bacteria, soap, goldenPoop }
+enum CatchItemType { poop, paper, bacteria, soap, goldenPoop, soda, chlorineBomb }
 
 class CatchItem {
   double x;
@@ -2805,6 +3429,7 @@ class CacaCatchPainter extends CustomPainter {
   final double toiletX;
   final List<GameParticle> particles;
   final bool hasSoapShield;
+  final bool isSodaFrenzy;
   final bool isFeverMode;
   final double width;
   final double height;
@@ -2815,6 +3440,7 @@ class CacaCatchPainter extends CustomPainter {
     required this.toiletX,
     required this.particles,
     required this.hasSoapShield,
+    required this.isSodaFrenzy,
     required this.isFeverMode,
     required this.width,
     required this.height,
@@ -2854,7 +3480,7 @@ class CacaCatchPainter extends CustomPainter {
 
     // Dibujar items
     for (var item in items) {
-      final isSpecial = item.type == CatchItemType.goldenPoop || item.type == CatchItemType.soap;
+      final isSpecial = item.type == CatchItemType.goldenPoop || item.type == CatchItemType.soap || item.type == CatchItemType.soda || item.type == CatchItemType.chlorineBomb;
       
       if (isSpecial) {
         final glowPaint = Paint()
@@ -2886,6 +3512,19 @@ class CacaCatchPainter extends CustomPainter {
         ..strokeWidth = 2;
       canvas.drawCircle(Offset(toiletRealX, toiletY + 12), 34, shieldPaint);
       canvas.drawCircle(Offset(toiletRealX, toiletY + 12), 34, borderPaint);
+    }
+
+    // Si tiene soda frenesí, dibujar aura cian brillante
+    if (isSodaFrenzy) {
+      final frenzyPaint = Paint()
+        ..color = Colors.cyanAccent.withAlpha(70)
+        ..style = PaintingStyle.fill;
+      final frenzyBorder = Paint()
+        ..color = Colors.cyanAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawCircle(Offset(toiletRealX, toiletY + 12), 36, frenzyPaint);
+      canvas.drawCircle(Offset(toiletRealX, toiletY + 12), 36, frenzyBorder);
     }
 
     // Si es modo fiebre, dibujar aura dorada alrededor de la taza
@@ -2956,8 +3595,16 @@ class FlappyPipe {
   final double gapY;
   final double gapHeight;
   bool passed = false;
+  bool hasStar;
+  bool starCollected;
 
-  FlappyPipe({required this.x, required this.gapY, required this.gapHeight});
+  FlappyPipe({
+    required this.x,
+    required this.gapY,
+    required this.gapHeight,
+    this.hasStar = false,
+    this.starCollected = false,
+  });
 }
 
 class FlappyGamePainter extends CustomPainter {
@@ -2972,6 +3619,7 @@ class FlappyGamePainter extends CustomPainter {
   final int highScore;
   final String equippedSkin;
   final List<FloatingText> floatingTexts;
+  final bool hasShield;
 
   FlappyGamePainter({
     required this.flappyX,
@@ -2985,6 +3633,7 @@ class FlappyGamePainter extends CustomPainter {
     required this.highScore,
     required this.equippedSkin,
     required this.floatingTexts,
+    required this.hasShield,
   });
 
   @override
@@ -3044,6 +3693,24 @@ class FlappyGamePainter extends CustomPainter {
       // Tubería inferior
       canvas.drawRect(Rect.fromLTWH(pipe.x, pipe.gapY + pipe.gapHeight, 50, height - (pipe.gapY + pipe.gapHeight)), pipePaint);
       canvas.drawRect(Rect.fromLTWH(pipe.x - 3, pipe.gapY + pipe.gapHeight, 56, 18), rimPaint);
+
+      // Dibujar estrella si está presente
+      if (pipe.hasStar && !pipe.starCollected) {
+        final starX = pipe.x + 27.5;
+        final starY = pipe.gapY + pipe.gapHeight / 2;
+        
+        final glowStar = Paint()
+          ..color = Colors.amber.withAlpha(80)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 6);
+        canvas.drawCircle(Offset(starX, starY), 12, glowStar);
+
+        final starPainter = TextPainter(
+          text: const TextSpan(text: '⭐', style: TextStyle(fontSize: 20)),
+          textDirection: TextDirection.ltr,
+        );
+        starPainter.layout();
+        starPainter.paint(canvas, Offset(starX - starPainter.width / 2, starY - starPainter.height / 2));
+      }
     }
 
     // Dibujar línea de High Score
@@ -3088,6 +3755,20 @@ class FlappyGamePainter extends CustomPainter {
     canvas.save();
     canvas.translate(flappyX, poopY);
     canvas.rotate(flappyAngle);
+
+    // Dibujar escudo alrededor del personaje
+    if (hasShield) {
+      final shieldPaint = Paint()
+        ..color = Colors.blueAccent.withAlpha(70)
+        ..style = PaintingStyle.fill;
+      final borderPaint = Paint()
+        ..color = Colors.blueAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawCircle(const Offset(0, 0), 22, shieldPaint);
+      canvas.drawCircle(const Offset(0, 0), 22, borderPaint);
+    }
+
     final textPainter = TextPainter(
       text: TextSpan(text: equippedSkin, style: const TextStyle(fontSize: 28)),
       textDirection: TextDirection.ltr,
@@ -3124,8 +3805,8 @@ class FlappyGamePainter extends CustomPainter {
 }
 
 // --- TOILET JUMP ---
-enum PlatformType { normal, moving, fragile }
-enum ItemType { none, spring, jetpack }
+enum PlatformType { normal, moving, fragile, superSpring }
+enum ItemType { none, spring, jetpack, balloon }
 
 class JumpPlatform {
   double x;
@@ -3176,6 +3857,7 @@ class ToiletJumpPainter extends CustomPainter {
   final double scaleX;
   final double scaleY;
   final bool hasJetpack;
+  final bool hasBalloon;
   final String equippedSkin;
   final List<FloatingText> floatingTexts;
 
@@ -3191,6 +3873,7 @@ class ToiletJumpPainter extends CustomPainter {
     required this.scaleX,
     required this.scaleY,
     required this.hasJetpack,
+    required this.hasBalloon,
     required this.equippedSkin,
     required this.floatingTexts,
   });
@@ -3250,6 +3933,9 @@ class ToiletJumpPainter extends CustomPainter {
     final fragilePaint = Paint()
       ..color = Colors.brown[600]!
       ..style = PaintingStyle.fill;
+    final superSpringPaint = Paint()
+      ..color = Colors.redAccent[400]!
+      ..style = PaintingStyle.fill;
 
     for (var p in platforms) {
       if (p.broken) continue;
@@ -3259,6 +3945,8 @@ class ToiletJumpPainter extends CustomPainter {
         pPaint = movingPaint;
       } else if (p.type == PlatformType.fragile) {
         pPaint = fragilePaint;
+      } else if (p.type == PlatformType.superSpring) {
+        pPaint = superSpringPaint;
       }
 
       final rect = Rect.fromLTWH(p.x, p.y, p.width, 10);
@@ -3273,7 +3961,9 @@ class ToiletJumpPainter extends CustomPainter {
 
       // Dibujar objetos sobre las plataformas
       if (p.item != ItemType.none && !p.itemUsed) {
-        final itemIcon = p.item == ItemType.spring ? '🌀' : '🚀';
+        final itemIcon = p.item == ItemType.spring 
+            ? '🌀' 
+            : (p.item == ItemType.jetpack ? '🚀' : '🎈');
         
         canvas.save();
         canvas.translate(p.x + p.width / 2, p.y - 4);
@@ -3332,6 +4022,22 @@ class ToiletJumpPainter extends CustomPainter {
         ..color = Colors.blueAccent.withAlpha(60)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(const Offset(0, 0), 20, jetpackPaint);
+    }
+
+    if (hasBalloon) {
+      // Dibujar hilo del globo
+      final linePaint = Paint()
+        ..color = Colors.white70
+        ..strokeWidth = 1.0;
+      canvas.drawLine(const Offset(0, -10), const Offset(12, -32), linePaint);
+      
+      // Dibujar globo 🎈
+      final balloonPainter = TextPainter(
+        text: const TextSpan(text: '🎈', style: TextStyle(fontSize: 18)),
+        textDirection: TextDirection.ltr,
+      );
+      balloonPainter.layout();
+      balloonPainter.paint(canvas, Offset(12 - balloonPainter.width / 2, -32 - balloonPainter.height));
     }
 
     final cacaPainter = TextPainter(
@@ -3411,7 +4117,25 @@ class InvaderLaser {
   double x;
   double y;
   double speed;
-  InvaderLaser({required this.x, required this.y, this.speed = 8.0});
+  double vx;
+  bool isEnemy;
+  bool isBurst;
+  InvaderLaser({
+    required this.x,
+    required this.y,
+    this.speed = 8.0,
+    this.vx = 0.0,
+    this.isEnemy = false,
+    this.isBurst = false,
+  });
+}
+
+class InvaderItem {
+  double x;
+  double y;
+  double speed;
+  String type; // 'triple'
+  InvaderItem({required this.x, required this.y, this.speed = 1.8, required this.type});
 }
 
 class InvaderEnemy {
@@ -3425,6 +4149,7 @@ class InvaderEnemy {
 
 class PoopInvadersPainter extends CustomPainter {
   final double shipX;
+  final double shipY;
   final List<InvaderLaser> lasers;
   final List<InvaderEnemy> enemies;
   final List<GameParticle> particles;
@@ -3433,9 +4158,15 @@ class PoopInvadersPainter extends CustomPainter {
   final List<FloatingText> floatingTexts;
   final int score;
   final int record;
+  final bool isBossActive;
+  final double bossX;
+  final int bossHp;
+  final int bossMaxHp;
+  final List<InvaderItem> items;
 
   PoopInvadersPainter({
     required this.shipX,
+    required this.shipY,
     required this.lasers,
     required this.enemies,
     required this.particles,
@@ -3444,6 +4175,11 @@ class PoopInvadersPainter extends CustomPainter {
     required this.floatingTexts,
     required this.score,
     required this.record,
+    required this.isBossActive,
+    required this.bossX,
+    required this.bossHp,
+    required this.bossMaxHp,
+    required this.items,
   });
 
   @override
@@ -3472,7 +4208,7 @@ class PoopInvadersPainter extends CustomPainter {
     // Dibujar enemigos
     for (var enemy in enemies) {
       final textPainter = TextPainter(
-        text: TextSpan(text: enemy.type, style: const TextStyle(fontSize: 26)),
+        text: TextSpan(text: enemy.type, style: const TextStyle(fontSize: 36)),
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
@@ -3491,31 +4227,93 @@ class PoopInvadersPainter extends CustomPainter {
       }
     }
 
-    // Dibujar lasers (chorros de agua 💦)
-    final laserPaint = Paint()
-      ..color = Colors.cyanAccent
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
+    // Dibujar lasers
     for (var laser in lasers) {
+      final color = laser.isEnemy 
+          ? Colors.purpleAccent 
+          : (laser.isBurst ? Colors.amberAccent : Colors.cyanAccent);
+      final laserPaint = Paint()
+        ..color = color
+        ..strokeWidth = laser.isEnemy ? 4.0 : 3.0
+        ..strokeCap = StrokeCap.round;
+      
       canvas.drawLine(
         Offset(laser.x * width, laser.y * height),
-        Offset(laser.x * width, laser.y * height - 12),
+        Offset(laser.x * width, laser.y * height - (laser.isEnemy ? -12 : 12)),
         laserPaint,
       );
-      // Brillo del laser
-      final glowPaint = Paint()
-        ..color = Colors.cyanAccent.withAlpha(80)
-        ..strokeWidth = 6.0
-        ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);
-      canvas.drawLine(
-        Offset(laser.x * width, laser.y * height),
-        Offset(laser.x * width, laser.y * height - 12),
-        glowPaint,
-      );
+      
+      // Brillo del laser (solo del jugador)
+      if (!laser.isEnemy) {
+        final glowColor = laser.isBurst ? Colors.amberAccent : Colors.cyanAccent;
+        final glowPaint = Paint()
+          ..color = glowColor.withAlpha(80)
+          ..strokeWidth = 6.0
+          ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);
+        canvas.drawLine(
+          Offset(laser.x * width, laser.y * height),
+          Offset(laser.x * width, laser.y * height - 12),
+          glowPaint,
+        );
+      }
     }
 
-    // Dibujar inodoro (nave) en la parte inferior
-    final shipY = height - 55.0;
+    // Dibujar items flotando
+    for (var item in items) {
+      final color = item.type == 'triple' 
+          ? Colors.cyanAccent 
+          : (item.type == 'burst' ? Colors.amber : Colors.orangeAccent);
+      
+      final glowPaint = Paint()
+        ..color = color.withAlpha(80)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 8);
+      canvas.drawCircle(Offset(item.x * width, item.y * height), 12, glowPaint);
+      
+      final String emoji = item.type == 'triple' 
+          ? '💧' 
+          : (item.type == 'burst' ? '🔫' : '💣');
+      
+      final itemPainter = TextPainter(
+        text: TextSpan(text: emoji, style: const TextStyle(fontSize: 18)),
+        textDirection: TextDirection.ltr,
+      );
+      itemPainter.layout();
+      itemPainter.paint(canvas, Offset(item.x * width - itemPainter.width / 2, item.y * height - itemPainter.height / 2));
+    }
+
+    // Dibujar Jefe Bacteria
+    if (isBossActive) {
+      final bossXReal = bossX * width;
+      final bossYReal = 0.15 * height;
+      
+      // Glow
+      final glowPaint = Paint()
+        ..color = Colors.redAccent.withAlpha(80)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.solid, 10);
+      canvas.drawCircle(Offset(bossXReal, bossYReal), 34, glowPaint);
+
+      final bossPainter = TextPainter(
+        text: const TextSpan(text: '👑🦠', style: TextStyle(fontSize: 48)),
+        textDirection: TextDirection.ltr,
+      );
+      bossPainter.layout();
+      bossPainter.paint(canvas, Offset(bossXReal - bossPainter.width / 2, bossYReal - bossPainter.height / 2));
+      
+      // HP Bar
+      final hpBarBg = Paint()..color = Colors.white24;
+      final hpBarFg = Paint()..color = Colors.redAccent;
+      
+      const barWidth = 60.0;
+      const barHeight = 4.0;
+      final barLeft = bossXReal - barWidth / 2;
+      final barTop = bossYReal - 34.0;
+      
+      canvas.drawRect(Rect.fromLTWH(barLeft, barTop, barWidth, barHeight), hpBarBg);
+      canvas.drawRect(Rect.fromLTWH(barLeft, barTop, barWidth * (bossHp / bossMaxHp), barHeight), hpBarFg);
+    }
+
+    // Dibujar inodoro (nave) en su posición dinámica
+    final shipYReal = shipY * height;
     final shipRealX = shipX * width;
     final shipPainter = TextPainter(
       text: const TextSpan(text: '🚽', style: TextStyle(fontSize: 38)),
@@ -3524,7 +4322,7 @@ class PoopInvadersPainter extends CustomPainter {
     shipPainter.layout();
     shipPainter.paint(
       canvas,
-      Offset(shipRealX - shipPainter.width / 2, shipY - 8),
+      Offset(shipRealX - shipPainter.width / 2, shipYReal - shipPainter.height / 2),
     );
 
     // Dibujar partículas

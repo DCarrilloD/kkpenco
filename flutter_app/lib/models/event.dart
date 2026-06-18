@@ -94,15 +94,19 @@ class KKEvent {
     if (consistency == Consistency.jurasica) base = 350.0;
     if (consistency == Consistency.espurruteo) base = 100.0;
 
-    // Normalizar duración (5 min = 300 seg = factor 1.0). Límites: [0.5x - 2.5x]
+    // Normalizar duración (5 min = 300 seg = factor 1.0). Límites ampliados: [0.1x - 4.0x]
     double durationFactor = (durationSeconds ?? 300) / 300.0;
-    if (durationFactor < 0.5) durationFactor = 0.5;
-    if (durationFactor > 2.5) durationFactor = 2.5;
+    if (durationFactor < 0.1) durationFactor = 0.1;
+    if (durationFactor > 4.0) durationFactor = 4.0;
 
     // Dificultad (1-5, factor 1.0 a 1.2)
     double difficultyFactor = 1.0 + ((difficulty - 1) * 0.05);
 
-    return double.parse((base * durationFactor * difficultyFactor).toStringAsFixed(1));
+    double calculated = base * durationFactor * difficultyFactor;
+    // Variabilidad coherente: 50.0 g mínimo, 1000.0 g (1 kg) máximo
+    double clamped = calculated.clamp(50.0, 1000.0);
+
+    return double.parse(clamped.toStringAsFixed(1));
   }
 
   // Calcula la racha consecutiva de registros diarios

@@ -24,10 +24,25 @@ class _ChatScreenState extends State<ChatScreen> {
   Timer? _typingTimer;
   bool _isTyping = false;
 
+  bool _isAdmin = false;
+
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_onTextChanged);
+    _checkAdminStatus();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final currentUser = _authService.currentUser;
+    if (currentUser != null) {
+      final admin = await _dbService.isAdminUser(currentUser.uid);
+      if (mounted) {
+        setState(() {
+          _isAdmin = admin;
+        });
+      }
+    }
   }
 
   @override
@@ -144,36 +159,82 @@ class _ChatScreenState extends State<ChatScreen> {
     final currentUser = _authService.currentUser;
     if (currentUser == null) return;
 
+    final isMe = msg.userId == currentUser.uid;
+    final canDelete = isMe || _isAdmin;
+
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           backgroundColor: const Color(0xFF1E1E1E),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text('Reaccionar', style: TextStyle(color: Colors.white, fontSize: 16)),
-          content: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: ['👍', '💩', '😂', '🔥', '👏', '👑'].map((emoji) {
-              final hasReacted = msg.reactions[emoji]?.contains(currentUser.uid) ?? false;
-              return GestureDetector(
-                onTap: () async {
-                  Navigator.pop(context);
-                  await _dbService.reactToMessage(msg.id, emoji, currentUser.uid);
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: hasReacted ? Colors.brown[900] : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: hasReacted ? Colors.amber[700]! : Colors.transparent,
-                      width: 1.5,
+          title: const Text('Opciones de Mensaje', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('Reaccionar:', style: TextStyle(color: Colors.grey, fontSize: 12)),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: ['👍', '💩', '😂', '🔥', '👏', '👑'].map((emoji) {
+                  final hasReacted = msg.reactions[emoji]?.contains(currentUser.uid) ?? false;
+                  return GestureDetector(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _dbService.reactToMessage(msg.id, emoji, currentUser.uid);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: hasReacted ? Colors.brown[900] : Colors.transparent,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: hasReacted ? Colors.amber[700]! : Colors.transparent,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Text(emoji, style: const TextStyle(fontSize: 22)),
                     ),
+                  );
+                }).toList(),
+              ),
+              if (canDelete) ...[
+                const Divider(color: Colors.white12, height: 24),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red[900],
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: Text(emoji, style: const TextStyle(fontSize: 26)),
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    try {
+                      await _dbService.deleteChatMessage(msg.id);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Mensaje eliminado correctamente.'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Error al eliminar mensaje: $e'),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.delete_forever_rounded, size: 18),
+                  label: const Text('Eliminar Mensaje', style: TextStyle(fontWeight: FontWeight.bold)),
                 ),
-              );
-            }).toList(),
+              ],
+            ],
           ),
         );
       },

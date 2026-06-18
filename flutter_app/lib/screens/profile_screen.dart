@@ -14,6 +14,7 @@ import '../models/event.dart';
 import 'stats_panel_screen.dart';
 import 'biometric_simulation_dialog.dart';
 import 'achievements_screen.dart';
+import 'admin_panel_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -39,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _autoGeolocate = false;
   int _userStreak = 0;
   String? _equippedTitle;
+  bool _isAdmin = false;
 
   @override
   void initState() {
@@ -76,6 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = _authService.currentUser;
     int streak = 0;
     String? title;
+    bool adminRole = false;
     if (user != null) {
       try {
         final streaks = await _dbService.getUserStreaks(user.uid);
@@ -83,6 +86,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         
         final userData = await _dbService.getUserData(user.uid);
         title = userData['equippedTitle'] as String?;
+
+        final profile = await _authService.getUserProfile(user.uid);
+        adminRole = profile != null && profile['role'] == 'admin';
       } catch (e) {
         debugPrint('Error al cargar racha de perfil: $e');
       }
@@ -92,6 +98,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _biometricsEnabled = enabled;
         _userStreak = streak;
         _equippedTitle = title;
+        _isAdmin = adminRole;
       });
     }
   }
@@ -652,7 +659,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = _authService.currentUser;
     if (user == null) return const Center(child: CircularProgressIndicator());
 
-    final isAdmin = user.email == 'd.carrillo.d@gmail.com' || user.displayName?.toLowerCase() == 'admin';
+    final isAdmin = _isAdmin || user.email == 'd.carrillo.d@gmail.com' || user.displayName?.toLowerCase() == 'admin';
 
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
@@ -819,6 +826,30 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
             const SizedBox(height: 20),
+
+            // Botón Panel de Administración (Solo para Admins)
+            if (isAdmin) ...[
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const AdminPanelScreen()),
+                  ).then((_) => _loadProfileData());
+                },
+                icon: const Icon(Icons.admin_panel_settings_rounded, color: Colors.pinkAccent),
+                label: const Text('Panel de Administración 👑', style: TextStyle(fontWeight: FontWeight.bold)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF1A1525), // Tono oscuro premium
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: const BorderSide(color: Colors.pinkAccent, width: 0.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
 
             // Botón Acceso Panel de Estadísticas (Con Contraseña / Biometría)
             ElevatedButton.icon(
