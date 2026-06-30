@@ -4,12 +4,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 
 import 'firebase_options.dart';
 import 'models/app_user.dart';
 import 'models/event.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
+import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/tracker_screen.dart';
 import 'screens/ranking_screen.dart';
@@ -33,7 +36,10 @@ Future<void> interactiveCallback(Uri? uri) async {
     // Si ya está inicializado
   }
 
-  final user = FirebaseAuth.instance.currentUser;
+  User? user = FirebaseAuth.instance.currentUser;
+  if (user == null) {
+    user = await FirebaseAuth.instance.authStateChanges().first;
+  }
   if (user == null) return;
 
   Consistency consistency;
@@ -43,6 +49,8 @@ Future<void> interactiveCallback(Uri? uri) async {
     consistency = Consistency.jurasica;
   } else if (consistencyStr == 'espurruteo') {
     consistency = Consistency.espurruteo;
+  } else if (consistencyStr == 'cabra') {
+    consistency = Consistency.cabra;
   } else {
     return;
   }
@@ -61,7 +69,7 @@ Future<void> interactiveCallback(Uri? uri) async {
   final newEvent = KKEvent(
     id: 'mock_${DateTime.now().millisecondsSinceEpoch}',
     userId: user.uid,
-    username: user.displayName ?? 'Usuario',
+    displayName: user.displayName,
     timestamp: DateTime.now(),
     duration: durationSecs,
     consistency: consistency,
@@ -75,16 +83,48 @@ Future<void> interactiveCallback(Uri? uri) async {
   );
 
   await dbService.addEvent(newEvent);
+
+  try {
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const initializationSettings = InitializationSettings(android: initializationSettingsAndroid);
+    await flutterLocalNotificationsPlugin.initialize(settings: initializationSettings);
+
+    const androidPlatformChannelSpecifics = AndroidNotificationDetails(
+      'kkpenco_quick',
+      'Registros Rápidos',
+      channelDescription: 'Notificaciones de registros desde el widget',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+    const platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
+    
+    await flutterLocalNotificationsPlugin.show(
+      id: DateTime.now().millisecond,
+      title: '¡Registro añadido! 💩',
+      body: 'Tu registro rápido ($consistencyStr) se ha guardado con éxito.',
+      notificationDetails: platformChannelSpecifics,
+    );
+  } catch (e) {
+    debugPrint('Error showing notification: $e');
+  }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    try {
+      await FlutterDisplayMode.setLowRefreshRate(); // Forzar 60Hz por defecto para ahorrar batería
+    } catch (e) {
+      debugPrint('No se pudo establecer display mode: $e');
+    }
+  }
+
   // Registro del callback interactivo del Widget de Escritorio (solo Android e iOS)
   if (defaultTargetPlatform == TargetPlatform.android || defaultTargetPlatform == TargetPlatform.iOS) {
     await HomeWidget.registerInteractivityCallback(interactiveCallback);
   }
-
 
   // Inicialización segura de Firebase
   try {
@@ -115,14 +155,7 @@ class KKpencoApp extends StatelessWidget {
     return MaterialApp(
       title: 'KKpenco 2026',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.brown,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        textTheme: GoogleFonts.outfitTextTheme(
-          ThemeData.dark().textTheme,
-        ),
-      ),
+      theme: AppTheme.darkTheme,
       home: const AuthWrapper(),
     );
   }

@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
-
+import 'heatmap_screen.dart';
 class RankingScreen extends StatefulWidget {
   const RankingScreen({super.key});
 
@@ -24,11 +24,23 @@ class _RankingScreenState extends State<RankingScreen> {
     if (currentUser == null) return const Center(child: CircularProgressIndicator());
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFF000000),
       appBar: AppBar(
         title: const Text('Clasificación', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.map_rounded, color: Colors.amberAccent),
+            tooltip: 'Ver Mapa de Calor y Territorios',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HeatmapScreen()),
+              );
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [

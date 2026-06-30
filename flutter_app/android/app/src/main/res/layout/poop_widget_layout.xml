@@ -4,7 +4,7 @@
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/poop_widget_background"
-    android:padding="12dp"
+    android:padding="8dp"
     android:gravity="center">
 
     <TextView
@@ -13,15 +13,71 @@
         android:layout_height="wrap_content"
         android:text="KKpenco Express ⚡"
         android:textColor="#FFFFFF"
-        android:textSize="13sp"
+        android:textSize="12sp"
         android:textStyle="bold"
-        android:layout_marginBottom="8dp"/>
+        android:layout_marginBottom="6dp"/>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center">
+
+        <!-- Botón Cabra -->
+        <LinearLayout
+            android:id="@+id/btn_cabra"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="6dp">
+            
+            <ImageView
+                android:id="@+id/img_cabra"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:contentDescription="Cabra"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cabra"
+                android:textColor="#8D6E63"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp"/>
+        </LinearLayout>
+
+        <!-- Botón Espurruteo -->
+        <LinearLayout
+            android:id="@+id/btn_espurruteo"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="6dp">
+            
+            <ImageView
+                android:id="@+id/img_espurruteo"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:contentDescription="Espurruteo"/>
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Espurruteo"
+                android:textColor="#64B5F6"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:layout_marginTop="2dp"/>
+        </LinearLayout>
 
         <!-- Botón Normal -->
         <LinearLayout
@@ -34,26 +90,26 @@
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
-            android:padding="8dp">
+            android:padding="6dp">
             
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="💩"
-                android:textSize="22sp"/>
+            <ImageView
+                android:id="@+id/img_normal"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:contentDescription="Normal"/>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Normal"
                 android:textColor="#81C784"
-                android:textSize="10sp"
+                android:textSize="9sp"
                 android:textStyle="bold"
                 android:layout_marginTop="2dp"/>
         </LinearLayout>
 
-        <!-- Botón Dura -->
+        <!-- Botón Jurásica -->
         <LinearLayout
-            android:id="@+id/btn_dura"
+            android:id="@+id/btn_jurasica"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
@@ -62,47 +118,19 @@
             android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
-            android:padding="8dp">
+            android:padding="6dp">
             
+            <ImageView
+                android:id="@+id/img_jurasica"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:contentDescription="Jurásica"/>
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="⛰️"
-                android:textSize="22sp"/>
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Dura"
+                android:text="Jurásica"
                 android:textColor="#FFB74D"
-                android:textSize="10sp"
-                android:textStyle="bold"
-                android:layout_marginTop="2dp"/>
-        </LinearLayout>
-
-        <!-- Botón Líquida -->
-        <LinearLayout
-            android:id="@+id/btn_liquida"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:background="?android:attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true"
-            android:padding="8dp">
-            
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="🌊"
-                android:textSize="22sp"/>
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Líquida"
-                android:textColor="#64B5F6"
-                android:textSize="10sp"
+                android:textSize="9sp"
                 android:textStyle="bold"
                 android:layout_marginTop="2dp"/>
         </LinearLayout>

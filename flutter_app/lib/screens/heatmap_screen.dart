@@ -141,7 +141,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
       final Map<String, String> userNames = {};
       for (var e in list) {
         userCounts[e.userId] = (userCounts[e.userId] ?? 0) + 1;
-        userNames[e.userId] = e.username ?? 'Anónimo';
+        userNames[e.userId] = e.displayName ?? 'Anónimo';
       }
 
       String leaderId = '';
@@ -246,7 +246,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
 
       for (var e in list) {
         userCounts[e.userId] = (userCounts[e.userId] ?? 0) + 1;
-        userNames[e.userId] = e.username ?? 'Anónimo';
+        userNames[e.userId] = e.displayName ?? 'Anónimo';
       }
 
       // Encontrar al líder (Señor del Trono)
@@ -303,7 +303,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     return DefaultTabController(
       length: 2,
       child: Scaffold(
-        backgroundColor: const Color(0xFF121212),
+        backgroundColor: const Color(0xFF000000),
         appBar: AppBar(
           title: const Text('KKpencos por el mundo 🌍', style: TextStyle(fontWeight: FontWeight.bold)),
           backgroundColor: Colors.transparent,
@@ -609,7 +609,7 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFF121212),
+                                                color: const Color(0xFF000000),
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(

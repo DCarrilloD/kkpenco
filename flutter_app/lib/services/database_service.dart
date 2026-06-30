@@ -8,6 +8,7 @@ import 'auth_service.dart'; // Para leer useMockData
 import '../models/event.dart';
 import '../models/chat_message.dart';
 import '../models/achievement.dart';
+import '../models/app_user.dart';
 
 // Estructura para paginación
 class PagedEventsResult {
@@ -21,12 +22,24 @@ class PagedEventsResult {
 class DatabaseService {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
 
+
+
+  CollectionReference<KKEvent> get _eventsRef => _db.collection('events').withConverter<KKEvent>(
+        fromFirestore: (snapshot, _) => KKEvent.fromFirestore(snapshot),
+        toFirestore: (event, _) => event.toFirestore(),
+      );
+
+  CollectionReference<ChatMessage> get _chatRef => _db.collection('chat').withConverter<ChatMessage>(
+        fromFirestore: (snapshot, _) => ChatMessage.fromFirestore(snapshot),
+        toFirestore: (msg, _) => msg.toFirestore(),
+      );
+
   // --- MOCK STORAGE EN MEMORIA ---
   static final List<KKEvent> _mockEvents = [
     KKEvent(
       id: 'mock_1',
       userId: 'mock_uid',
-      username: 'David',
+      displayName: 'David',
       timestamp: DateTime.now().subtract(const Duration(hours: 2)),
       duration: 300,
       consistency: Consistency.normal,
@@ -39,7 +52,7 @@ class DatabaseService {
     KKEvent(
       id: 'mock_2',
       userId: 'mock_uid',
-      username: 'David',
+      displayName: 'David',
       timestamp: DateTime.now().subtract(const Duration(days: 1)),
       duration: 450,
       consistency: Consistency.jurasica,
@@ -61,9 +74,9 @@ class DatabaseService {
   static final List<Map<String, dynamic>> _mockMonthlyStats = [];
 
   static final List<ChatMessage> _mockChatMessages = [
-    ChatMessage(id: 'c1', userId: 'user_2', username: 'Carlos', content: '¿Quién va ganando hoy?', timestamp: DateTime.now().subtract(const Duration(minutes: 10))),
-    ChatMessage(id: 'c2', userId: 'user_3', username: 'Elena', content: '¡Yo llevo 2 hoy!', timestamp: DateTime.now().subtract(const Duration(minutes: 8))),
-    ChatMessage(id: 'c3', userId: 'mock_uid', username: 'David', content: 'Jajaja qué locura, yo acabo de registrar una Jurásica.', timestamp: DateTime.now().subtract(const Duration(minutes: 5))),
+    ChatMessage(id: 'c1', userId: 'user_2', displayName: 'Carlos', content: '¿Quién va ganando hoy?', timestamp: DateTime.now().subtract(const Duration(minutes: 10))),
+    ChatMessage(id: 'c2', userId: 'user_3', displayName: 'Elena', content: '¡Yo llevo 2 hoy!', timestamp: DateTime.now().subtract(const Duration(minutes: 8))),
+    ChatMessage(id: 'c3', userId: 'mock_uid', displayName: 'David', content: 'Jajaja qué locura, yo acabo de registrar una Jurásica.', timestamp: DateTime.now().subtract(const Duration(minutes: 5))),
   ];
 
   static final _eventsStreamController = StreamController<List<KKEvent>>.broadcast();
@@ -72,6 +85,9 @@ class DatabaseService {
   
   static final List<Map<String, dynamic>> _mockDuels = [];
   static final _duelsStreamController = StreamController<List<Map<String, dynamic>>>.broadcast();
+  
+  static final _achievementUnlockedStreamController = StreamController<String>.broadcast();
+  static Stream<String> get onAchievementUnlocked => _achievementUnlockedStreamController.stream;
 
   // Presencia de escritura
   static final Map<String, String> _mockTypingUsers = {};
@@ -111,7 +127,7 @@ class DatabaseService {
         _mockEvents.addAll(list.map((m) => KKEvent(
           id: m['id'] ?? '',
           userId: m['userId'] ?? '',
-          username: m['username'],
+          displayName: m['username'],
           timestamp: DateTime.tryParse(m['timestamp'] ?? '') ?? DateTime.now(),
           duration: m['duration'],
           consistency: Consistency.values.firstWhere((c) => c.name == m['consistency'] || c.displayName == m['consistency'], orElse: () => Consistency.normal),
@@ -134,7 +150,7 @@ class DatabaseService {
         _mockChatMessages.addAll(list.map((m) => ChatMessage(
           id: m['id'] ?? '',
           userId: m['userId'] ?? '',
-          username: m['username'] ?? '',
+          displayName: m['username'] ?? '',
           content: m['content'] ?? '',
           timestamp: DateTime.tryParse(m['timestamp'] ?? '') ?? DateTime.now(),
           type: m['type'] ?? 'text',
@@ -176,7 +192,7 @@ class DatabaseService {
       final eventsJson = jsonEncode(_mockEvents.map((e) => {
         'id': e.id,
         'userId': e.userId,
-        'username': e.username,
+        'username': e.displayName,
         'timestamp': e.timestamp.toIso8601String(),
         'duration': e.duration,
         'consistency': e.consistency.name,
@@ -194,7 +210,7 @@ class DatabaseService {
       final chatJson = jsonEncode(_mockChatMessages.map((m) => {
         'id': m.id,
         'userId': m.userId,
-        'username': m.username,
+        'username': m.displayName,
         'content': m.content,
         'timestamp': m.timestamp.toIso8601String(),
         'type': m.type,
@@ -227,7 +243,7 @@ class DatabaseService {
       final newMockEvent = KKEvent(
         id: 'mock_${DateTime.now().millisecondsSinceEpoch}',
         userId: event.userId,
-        username: event.username,
+        displayName: event.displayName,
         timestamp: event.timestamp,
         duration: event.duration,
         consistency: event.consistency,
@@ -244,7 +260,7 @@ class DatabaseService {
 
       // Incrementar contador de ranking simulado
       for (var user in _mockRankings) {
-        if (user['uid'] == event.userId || user['username'] == event.username) {
+        if (user['uid'] == event.userId || user['username'] == event.displayName) {
           user['poopCount'] = (user['poopCount'] as int) + 1;
           user['lastPoop'] = event.timestamp;
           break;
@@ -279,14 +295,14 @@ class DatabaseService {
       if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
       await addKcoins(event.userId, kcoinsReward);
 
-      await _updateUserStreaks(event.userId, event.username, isDeletion: false, newEventDate: event.timestamp);
+      await _updateUserStreaks(event.userId, event.displayName, isDeletion: false, newEventDate: event.timestamp);
       await _updateActiveDuelsCount(event.userId);
       await _checkAndUnlockAchievements(event);
       _saveMockData();
       return;
     }
 
-    final eventRef = _db.collection('events').doc();
+    final eventRef = _eventsRef.doc();
     final userRef = _db.collection('users').doc(event.userId);
 
     final monthStr = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}";
@@ -299,7 +315,7 @@ class DatabaseService {
     final batch = _db.batch();
 
     // Registrar el evento con ID autogenerado
-    batch.set(eventRef, event.toFirestore());
+    batch.set(eventRef, event);
 
     // Incrementar el contador de deposiciones del usuario de por vida
     batch.update(userRef, {
@@ -322,7 +338,7 @@ class DatabaseService {
     if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
     await addKcoins(event.userId, kcoinsReward);
 
-    await _updateUserStreaks(event.userId, event.username, isDeletion: false, newEventDate: event.timestamp);
+    await _updateUserStreaks(event.userId, event.displayName, isDeletion: false, newEventDate: event.timestamp);
     await _updateActiveDuelsCount(event.userId);
     await _checkAndUnlockAchievements(event);
   }
@@ -367,7 +383,7 @@ class DatabaseService {
 
       // Decrementar contador en rankings
       for (var user in _mockRankings) {
-        if (user['uid'] == event.userId || user['username'] == event.username) {
+        if (user['uid'] == event.userId || user['username'] == event.displayName) {
           int count = user['poopCount'] as int;
           if (count > 0) {
             user['poopCount'] = count - 1;
@@ -391,7 +407,7 @@ class DatabaseService {
         }
       }
 
-      await _updateUserStreaks(event.userId, event.username, isDeletion: true);
+      await _updateUserStreaks(event.userId, event.displayName, isDeletion: true);
       await _saveMockData();
       return;
     }
@@ -424,7 +440,7 @@ class DatabaseService {
 
     await batch.commit();
 
-    await _updateUserStreaks(event.userId, event.username, isDeletion: true);
+    await _updateUserStreaks(event.userId, event.displayName, isDeletion: true);
   }
 
   // Obtener flujo de eventos del usuario actual
@@ -433,13 +449,12 @@ class DatabaseService {
       Future.microtask(() => _eventsStreamController.add(List.from(_mockEvents)));
       return _eventsStreamController.stream;
     }
-    return _db
-        .collection('events')
+    return _eventsRef
         .where('userId', isEqualTo: userId)
         .orderBy('timestamp', descending: true)
         .snapshots()
         .map((snapshot) =>
-            snapshot.docs.map((doc) => KKEvent.fromFirestore(doc)).toList());
+            snapshot.docs.map((doc) => doc.data()).toList());
   }
 
   // Obtener todos los eventos (para exportación CSV de admin o backup)
@@ -447,11 +462,10 @@ class DatabaseService {
     if (useMockData) {
       return List.from(_mockEvents);
     }
-    final snapshot = await _db
-        .collection('events')
+    final snapshot = await _eventsRef
         .orderBy('timestamp', descending: true)
         .get();
-    return snapshot.docs.map((doc) => KKEvent.fromFirestore(doc)).toList();
+    return snapshot.docs.map((doc) => doc.data()).toList();
   }
 
   // --- PAGINACIÓN ---
@@ -475,8 +489,7 @@ class DatabaseService {
       return PagedEventsResult(events: events, cursor: nextCursor, hasMore: hasMore);
     }
 
-    Query query = _db
-        .collection('events')
+    Query<KKEvent> query = _eventsRef
         .where('userId', isEqualTo: userId)
         .orderBy('timestamp', descending: true)
         .limit(limit);
@@ -486,7 +499,7 @@ class DatabaseService {
     }
 
     final snap = await query.get();
-    final events = snap.docs.map((doc) => KKEvent.fromFirestore(doc)).toList();
+    final events = snap.docs.map((doc) => doc.data()).toList();
     final hasMore = snap.docs.length == limit;
     final nextCursor = snap.docs.isNotEmpty ? snap.docs.last : null;
 
@@ -527,13 +540,12 @@ class DatabaseService {
       Future.microtask(() => _chatStreamController.add(List.from(_mockChatMessages)));
       return _chatStreamController.stream;
     }
-    return _db
-        .collection('chat')
+    return _chatRef
         .orderBy('timestamp', descending: true)
         .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs
-            .map((doc) => ChatMessage.fromFirestore(doc))
+            .map((doc) => doc.data())
             .toList()
             .reversed // Para que se muestren en orden cronológico en la pantalla
             .toList());
@@ -545,7 +557,7 @@ class DatabaseService {
       final newMockMsg = ChatMessage(
         id: 'msg_${DateTime.now().millisecondsSinceEpoch}',
         userId: message.userId,
-        username: message.username,
+        displayName: message.displayName,
         content: message.content,
         timestamp: message.timestamp,
         type: message.type,
@@ -558,7 +570,7 @@ class DatabaseService {
       
       if (message.type == 'share_poop') {
         await addKcoins(message.userId, 10);
-        await unlockAchievement(message.userId, 'socializer', message.username);
+        await unlockAchievement(message.userId, 'socializer', message.displayName);
       }
       if (message.type == 'image') {
         await addKcoins(message.userId, 15);
@@ -566,15 +578,15 @@ class DatabaseService {
         final count = (prefs.getInt('photo_count_${message.userId}') ?? 0) + 1;
         await prefs.setInt('photo_count_${message.userId}', count);
         if (count >= 5) {
-          await unlockAchievement(message.userId, 'toilet_photo', message.username);
+          await unlockAchievement(message.userId, 'toilet_photo', message.displayName);
         }
       }
       return;
     }
-    await _db.collection('chat').add(message.toFirestore());
+    await _chatRef.add(message);
     if (message.type == 'share_poop') {
       await addKcoins(message.userId, 10);
-      await unlockAchievement(message.userId, 'socializer', message.username);
+      await unlockAchievement(message.userId, 'socializer', message.displayName);
     }
     if (message.type == 'image') {
       await addKcoins(message.userId, 15);
@@ -585,7 +597,7 @@ class DatabaseService {
       final userSnap = await userRef.get();
       final count = userSnap.data()?['photoCount'] as int? ?? 0;
       if (count >= 5) {
-        await unlockAchievement(message.userId, 'toilet_photo', message.username);
+        await unlockAchievement(message.userId, 'toilet_photo', message.displayName);
       }
     }
   }
@@ -621,6 +633,73 @@ class DatabaseService {
     }
   }
 
+  // Actualizar los intentos y líderes de un reto de minijuego
+  Future<void> updateChallengeAttempts(String messageId, String userId, String username, int score) async {
+    if (useMockData) {
+      for (int i = 0; i < _mockChatMessages.length; i++) {
+        final msg = _mockChatMessages[i];
+        if (msg.id == messageId) {
+          final currentMeta = Map<String, dynamic>.from(msg.metadata ?? {});
+          final attempts = Map<String, dynamic>.from(currentMeta['attempts'] ?? {});
+          
+          final currentBest = attempts[userId] as int? ?? 0;
+          if (score > currentBest) {
+            attempts[userId] = score;
+          }
+          currentMeta['attempts'] = attempts;
+          
+          final challengerScore = currentMeta['targetScore'] as int? ?? 0;
+          final currentLeaderScore = currentMeta['leaderScore'] as int? ?? challengerScore;
+          if (score > currentLeaderScore) {
+            currentMeta['leaderName'] = username;
+            currentMeta['leaderScore'] = score;
+          }
+          
+          final updatedMsg = ChatMessage(
+            id: msg.id,
+            userId: msg.userId,
+            displayName: msg.displayName,
+            content: msg.content,
+            timestamp: msg.timestamp,
+            type: msg.type,
+            reactions: msg.reactions,
+            metadata: currentMeta,
+          );
+          _mockChatMessages[i] = updatedMsg;
+          _chatStreamController.add(List.from(_mockChatMessages));
+          _saveMockData();
+          break;
+        }
+      }
+      return;
+    }
+    
+    final docRef = _db.collection('chat').doc(messageId);
+    await _db.runTransaction((transaction) async {
+      final snap = await transaction.get(docRef);
+      if (!snap.exists) return;
+      
+      final data = snap.data() as Map<String, dynamic>;
+      final metadata = Map<String, dynamic>.from(data['metadata'] ?? {});
+      final attempts = Map<String, dynamic>.from(metadata['attempts'] ?? {});
+      
+      final currentBest = attempts[userId] as int? ?? 0;
+      if (score > currentBest) {
+        attempts[userId] = score;
+      }
+      metadata['attempts'] = attempts;
+      
+      final challengerScore = metadata['targetScore'] as int? ?? 0;
+      final currentLeaderScore = metadata['leaderScore'] as int? ?? challengerScore;
+      if (score > currentLeaderScore) {
+        metadata['leaderName'] = username;
+        metadata['leaderScore'] = score;
+      }
+      
+      transaction.update(docRef, {'metadata': metadata});
+    });
+  }
+
   // --- REACCIONES ---
   Future<void> reactToMessage(String messageId, String emoji, String userId) async {
     if (useMockData) {
@@ -643,7 +722,7 @@ class DatabaseService {
           final newMsg = ChatMessage(
             id: msg.id,
             userId: msg.userId,
-            username: msg.username,
+            displayName: msg.displayName,
             content: msg.content,
             timestamp: msg.timestamp,
             type: msg.type,
@@ -1064,16 +1143,7 @@ class DatabaseService {
           list.add(achievementId);
           await prefs.setStringList(key, list);
           
-          final display = username ?? 'Usuario';
-          final ach = Achievement.list.firstWhere((a) => a.id == achievementId);
-          await sendChatMessage(ChatMessage(
-            id: '',
-            userId: 'system',
-            username: 'Sistema 🏆',
-            content: '¡$display ha desbloqueado el logro: *"${ach.title}"*! 🌟\n"${ach.description}"',
-            timestamp: DateTime.now(),
-            type: 'system',
-          ));
+          _achievementUnlockedStreamController.add(achievementId);
         }
         return;
       }
@@ -1086,19 +1156,26 @@ class DatabaseService {
           'achievements': FieldValue.arrayUnion([achievementId]),
         }, SetOptions(merge: true));
 
-        final display = username ?? snap.data()?['username'] ?? 'Usuario';
-        final ach = Achievement.list.firstWhere((a) => a.id == achievementId);
-        await sendChatMessage(ChatMessage(
-          id: '',
-          userId: 'system',
-          username: 'Sistema 🏆',
-          content: '¡$display ha desbloqueado el logro: *"${ach.title}"*! 🌟\n"${ach.description}"',
-          timestamp: DateTime.now(),
-          type: 'system',
-        ));
+        _achievementUnlockedStreamController.add(achievementId);
       }
     } catch (e) {
       debugPrint('Error al desbloquear logro: $e');
+    }
+  }
+
+  Future<void> shareAchievementToChat(String userId, String username, String achievementId) async {
+    try {
+      final ach = Achievement.list.firstWhere((a) => a.id == achievementId);
+      await sendChatMessage(ChatMessage(
+        id: '',
+        userId: 'system',
+        displayName: 'Sistema 🏆',
+        content: '¡$username ha desbloqueado el logro: *"${ach.title}"*! 🌟\n"${ach.description}"',
+        timestamp: DateTime.now(),
+        type: 'system',
+      ));
+    } catch (e) {
+      debugPrint('Error al compartir logro en el chat: $e');
     }
   }
 
@@ -1129,7 +1206,7 @@ class DatabaseService {
   Future<void> sendDuelChallenge(String targetUid, String targetUsername) async {
     final user = AuthService().currentUser;
     if (user == null) return;
-    final challengerName = user.displayName ?? 'Usuario';
+    final challengerName = user.displayName;
 
     if (useMockData) {
       final newDuel = {
@@ -1151,7 +1228,7 @@ class DatabaseService {
       await sendChatMessage(ChatMessage(
         id: '',
         userId: 'system',
-        username: 'Desafío ⚔️',
+        displayName: 'Desafío ⚔️',
         content: '¡$challengerName ha desafiado a $targetUsername a un duelo de cacas de 7 días! 💩🔥',
         timestamp: DateTime.now(),
         type: 'system',
@@ -1176,7 +1253,7 @@ class DatabaseService {
     await sendChatMessage(ChatMessage(
       id: '',
       userId: 'system',
-      username: 'Desafío ⚔️',
+      displayName: 'Desafío ⚔️',
       content: '¡$challengerName ha desafiado a $targetUsername a un duelo de cacas de 7 días! 💩🔥',
       timestamp: DateTime.now(),
       type: 'system',
@@ -1197,7 +1274,7 @@ class DatabaseService {
           await sendChatMessage(ChatMessage(
             id: '',
             userId: 'system',
-            username: 'Duelo Activo ⚔️',
+            displayName: 'Duelo Activo ⚔️',
             content: '¡El duelo entre ${d['challengerName']} y ${d['challengedName']} ha comenzado! Que gane el más regular. 💩🏁',
             timestamp: DateTime.now(),
             type: 'system',
@@ -1223,7 +1300,7 @@ class DatabaseService {
     await sendChatMessage(ChatMessage(
       id: '',
       userId: 'system',
-      username: 'Duelo Activo ⚔️',
+      displayName: 'Duelo Activo ⚔️',
       content: '¡El duelo entre ${data['challengerName']} y ${data['challengedName']} ha comenzado! Que gane el más regular. 💩🏁',
       timestamp: DateTime.now(),
       type: 'system',
@@ -1234,12 +1311,12 @@ class DatabaseService {
   Future<void> sendNudge(String targetUid, String targetUsername, int streak) async {
     final user = AuthService().currentUser;
     if (user == null) return;
-    final challengerName = user.displayName ?? 'Usuario';
+    final challengerName = user.displayName;
 
     await sendChatMessage(ChatMessage(
       id: '',
       userId: 'system',
-      username: 'Empujón ⚡',
+      displayName: 'Empujón ⚡',
       content: '¡$challengerName le ha dado un empujón a $targetUsername para que no pierda su racha de $streak días! 💩🏃‍♂️💨',
       timestamp: DateTime.now(),
       type: 'system',
@@ -1301,7 +1378,7 @@ class DatabaseService {
               await sendChatMessage(ChatMessage(
                 id: '',
                 userId: 'system',
-                username: 'Duelo Finalizado 🏆',
+                displayName: 'Duelo Finalizado 🏆',
                 content: 'El duelo entre ${d['challengerName']} y ${d['challengedName']} ha terminado. ¡El ganador es: $winnerName! con un marcador de $chCount a $cdCount 💩',
                 timestamp: DateTime.now(),
                 type: 'system',
@@ -1356,7 +1433,7 @@ class DatabaseService {
           await sendChatMessage(ChatMessage(
             id: '',
             userId: 'system',
-            username: 'Duelo Finalizado 🏆',
+            displayName: 'Duelo Finalizado 🏆',
             content: 'El duelo entre $chName y $cdName ha terminado. ¡El ganador es: $winnerName! con un marcador de $chCount a $cdCount 💩',
             timestamp: DateTime.now(),
             type: 'system',
@@ -1379,7 +1456,7 @@ class DatabaseService {
   Future<void> _checkAndUnlockAchievements(KKEvent event) async {
     try {
       final userId = event.userId;
-      final username = event.username;
+      final username = event.displayName;
 
       final userData = await getUserData(userId);
       final list = List<String>.from(userData['achievements'] ?? []);
@@ -1754,7 +1831,7 @@ class DatabaseService {
         final securedEvent = KKEvent(
           id: ev.id.isEmpty ? 'mock_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(10000)}' : ev.id,
           userId: uid,
-          username: username,
+          displayName: username,
           timestamp: ev.timestamp,
           duration: ev.duration,
           consistency: ev.consistency,
@@ -1836,7 +1913,7 @@ class DatabaseService {
         final securedEvent = KKEvent(
           id: ev.id.isEmpty ? _db.collection('events').doc().id : ev.id,
           userId: uid,
-          username: username,
+          displayName: username,
           timestamp: ev.timestamp,
           duration: ev.duration,
           consistency: ev.consistency,

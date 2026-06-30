@@ -12,7 +12,12 @@
           "package_name": "com.example.kkpenco"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCrOZIEgRuiFB2xibesgYK_lWUrePedaEI"
@@ -20,7 +25,41 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:322337821489:android:b9bffe52e81db71ff69610",
+        "android_client_info": {
+          "package_name": "com.kkpenco.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrOZIEgRuiFB2xibesgYK_lWUrePedaEI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

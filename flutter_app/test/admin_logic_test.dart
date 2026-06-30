@@ -54,7 +54,7 @@ void main() {
       final oldEvent = KKEvent(
         id: 'old_event_id',
         userId: 'other_user_uid',
-        username: 'Otro Amigo',
+        displayName: 'Otro Amigo',
         timestamp: DateTime.now().subtract(const Duration(hours: 1)),
         duration: 300,
         consistency: Consistency.normal,
@@ -85,7 +85,7 @@ void main() {
       final oldEventOfUser = KKEvent(
         id: 'old_user_event_id',
         userId: 'other_user_uid',
-        username: 'other_user',
+        displayName: 'other_user',
         timestamp: DateTime.now().subtract(const Duration(hours: 1)),
         duration: 300,
         consistency: Consistency.normal,
@@ -120,7 +120,7 @@ void main() {
       final chatMessage = ChatMessage(
         id: 'msg_to_delete',
         userId: 'other_user_uid',
-        username: 'Otro Amigo',
+        displayName: 'Otro Amigo',
         content: 'Hola mundo de pruebas',
         timestamp: DateTime.now(),
       );
@@ -168,7 +168,7 @@ void main() {
           final event = KKEvent(
             id: 'e_$i',
             userId: uid,
-            username: 'Usuario Anual',
+            displayName: 'Usuario Anual',
             timestamp: DateTime.now(), // Año en curso
             duration: 300,
             consistency: Consistency.normal,
@@ -189,7 +189,7 @@ void main() {
         final event100 = KKEvent(
           id: 'e_100',
           userId: uid,
-          username: 'Usuario Anual',
+          displayName: 'Usuario Anual',
           timestamp: DateTime.now(),
           duration: 300,
           consistency: Consistency.normal,
@@ -234,7 +234,7 @@ void main() {
           final event = KKEvent(
             id: 'long_e_$i',
             userId: uid,
-            username: 'Usuario Largo',
+            displayName: 'Usuario Largo',
             timestamp: DateTime.now().copyWith(hour: i % 24), // Diferentes horas para acumular franjas también
             duration: 3600, // 1 hora por evento
             consistency: Consistency.normal,
@@ -258,7 +258,7 @@ void main() {
           final event = KKEvent(
             id: 'hour_e_$h',
             userId: uid,
-            username: 'Usuario Largo',
+            displayName: 'Usuario Largo',
             timestamp: DateTime.now().copyWith(hour: h),
             duration: 300,
             consistency: Consistency.normal,
@@ -289,7 +289,7 @@ void main() {
           final event = KKEvent(
             id: 'month_e_$m',
             userId: uid,
-            username: 'Usuario Extra',
+            displayName: 'Usuario Extra',
             timestamp: DateTime(currentYear, m, 15, 9, 0), // A las 9:00 AM para acumular también la regularidad horaria
             duration: 300,
             consistency: Consistency.normal,
@@ -312,7 +312,7 @@ void main() {
           final event = KKEvent(
             id: 'gps_e_$g',
             userId: uid,
-            username: 'Usuario Extra',
+            displayName: 'Usuario Extra',
             timestamp: DateTime(currentYear, 1, 1, 9, 0), // A las 9:00 AM
             duration: 300,
             consistency: Consistency.normal,
@@ -339,7 +339,7 @@ void main() {
           final event = KKEvent(
             id: 'day_e_$d',
             userId: uid,
-            username: 'Usuario Extra',
+            displayName: 'Usuario Extra',
             timestamp: DateTime(dayOfYear.year, dayOfYear.month, dayOfYear.day, 9, 0),
             duration: 300,
             consistency: Consistency.normal,

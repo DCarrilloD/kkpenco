@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import '../widgets/responsive_layout.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -66,8 +68,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+    return ResponsiveLayout(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF000000),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -79,22 +82,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Logo / Icono Premium
-                  Icon(
-                    Icons.bubble_chart_rounded,
-                    size: 80,
-                    color: Colors.brown[400],
+                  Image.asset(
+                    'assets/images/cacapenco_logo.png',
+                    height: MediaQuery.of(context).size.height * 0.33,
+                    fit: BoxFit.contain,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'KKpenco 2026',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
+                  SizedBox(height: MediaQuery.of(context).size.height * 0.10),
                   Text(
                     _isSignUp
                         ? 'Únete al selecto grupo de registro'
@@ -250,6 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
+          ),
           ),
         ),
       ),

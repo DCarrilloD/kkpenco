@@ -1,12 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum Consistency {
-  normal('Normal'),
-  jurasica('Jurásica'),
-  espurruteo('Espurruteo');
+  normal('Normal', 300),
+  jurasica('Jurásica', 750),
+  espurruteo('Espurruteo', 150),
+  cabra('Cabra', 50);
 
   final String displayName;
-  const Consistency(this.displayName);
+  final int baseWeight;
+  const Consistency(this.displayName, this.baseWeight);
 
   static Consistency fromString(String value) {
     return Consistency.values.firstWhere(
@@ -56,7 +58,7 @@ enum LocationTag {
 class KKEvent {
   final String id;
   final String userId;
-  final String? username;
+  final String? displayName;
   final DateTime timestamp;
   final int? duration; // en segundos
   final Consistency consistency;
@@ -71,7 +73,7 @@ class KKEvent {
   KKEvent({
     required this.id,
     required this.userId,
-    this.username,
+    this.displayName,
     required this.timestamp,
     this.duration,
     required this.consistency,
@@ -87,23 +89,17 @@ class KKEvent {
   // Fórmula matemática para estimar el peso en gramos
   static double calculateWeight({
     required Consistency consistency,
-    required int? durationSeconds,
+    required int? durationSeconds, // Mantenido por compatibilidad
     required int difficulty,
   }) {
-    double base = 150.0;
-    if (consistency == Consistency.jurasica) base = 350.0;
-    if (consistency == Consistency.espurruteo) base = 100.0;
-
-    // Normalizar duración (5 min = 300 seg = factor 1.0). Límites ampliados: [0.1x - 4.0x]
-    double durationFactor = (durationSeconds ?? 300) / 300.0;
-    if (durationFactor < 0.1) durationFactor = 0.1;
-    if (durationFactor > 4.0) durationFactor = 4.0;
+    double base = consistency.baseWeight.toDouble();
 
     // Dificultad (1-5, factor 1.0 a 1.2)
     double difficultyFactor = 1.0 + ((difficulty - 1) * 0.05);
 
-    double calculated = base * durationFactor * difficultyFactor;
-    // Variabilidad coherente: 50.0 g mínimo, 1000.0 g (1 kg) máximo
+    double calculated = base * difficultyFactor;
+    
+    // Variabilidad coherente
     double clamped = calculated.clamp(50.0, 1000.0);
 
     return double.parse(clamped.toStringAsFixed(1));
@@ -152,7 +148,7 @@ class KKEvent {
     return KKEvent(
       id: doc.id,
       userId: data['userId'] ?? '',
-      username: data['username'],
+      displayName: data['username'] as String?,
       timestamp: (data['timestamp'] as Timestamp).toDate(),
       duration: durationVal,
       consistency: consistencyVal,
@@ -173,7 +169,7 @@ class KKEvent {
   Map<String, dynamic> toFirestore() {
     return {
       'userId': userId,
-      if (username != null) 'username': username,
+      if (displayName != null) 'username': displayName,
       'timestamp': Timestamp.fromDate(timestamp),
       if (duration != null) 'duration': duration,
       'consistency': consistency.displayName,

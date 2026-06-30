@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../models/event.dart';
 import '../services/database_service.dart';
-import 'heatmap_screen.dart';
 
 class StatsPanelScreen extends StatefulWidget {
   const StatsPanelScreen({super.key});
@@ -72,7 +71,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
       final Map<String, String> userNamesMap = {};
       for (var event in events) {
         final userId = event.userId;
-        userNamesMap[userId] = event.username ?? 'Usuario Desconocido';
+        userNamesMap[userId] = event.displayName ?? 'Usuario Desconocido';
       }
 
       setState(() {
@@ -319,7 +318,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
       final streak = KKEvent.calculateStreak(userEvs);
       if (streak > maxStreak) {
         maxStreak = streak;
-        streakUser = userEvs.first.username ?? _userNamesMap[userId] ?? 'Usuario';
+        streakUser = userEvs.first.displayName ?? _userNamesMap[userId] ?? 'Usuario';
       }
     });
 
@@ -471,7 +470,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         [
           "🏆 Jurásica Máxima",
           "Caca más pesada del periodo",
-          heaviest?.username ?? 'N/A',
+          heaviest?.displayName ?? 'N/A',
           heaviest != null ? "${heaviest.estimatedWeight} g" : 'N/A',
           heaviest != null ? dateFormat.format(heaviest.timestamp) : 'N/A',
           heaviest != null ? "Consistencia: ${heaviest.consistency.displayName}, Lugar: ${heaviest.location.displayName}" : ''
@@ -479,7 +478,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         [
           "👑 El Trono de Hierro",
           "Sesión más larga en el inodoro",
-          longest?.username ?? 'N/A',
+          longest?.displayName ?? 'N/A',
           longest != null ? "${(longest.duration! / 60.0).toStringAsFixed(1)} min" : 'N/A',
           longest != null ? dateFormat.format(longest.timestamp) : 'N/A',
           longest != null ? "Observaciones: ${longest.notes ?? 'Ninguna'}" : ''
@@ -487,7 +486,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         [
           "⚡ El Rayo",
           "Sesión más veloz registrada",
-          shortest?.username ?? 'N/A',
+          shortest?.displayName ?? 'N/A',
           shortest != null ? "${shortest.duration} segundos" : 'N/A',
           shortest != null ? dateFormat.format(shortest.timestamp) : 'N/A',
           shortest != null ? "Consistencia: ${shortest.consistency.displayName}" : ''
@@ -503,7 +502,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         [
           "☀️ Caca de Oro Madrugadora",
           "Registro más temprano (05:00 - 11:59)",
-          earliest?.username ?? 'N/A',
+          earliest?.displayName ?? 'N/A',
           earliest != null ? DateFormat('HH:mm').format(earliest.timestamp) : 'N/A',
           earliest != null ? dateFormat.format(earliest.timestamp) : 'N/A',
           earliest != null ? "Lugar: ${earliest.location.displayName}" : ''
@@ -511,7 +510,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         [
           "🦉 El Noctámbulo",
           "Registro más tardío (22:00 - 04:59)",
-          latest?.username ?? 'N/A',
+          latest?.displayName ?? 'N/A',
           latest != null ? DateFormat('HH:mm').format(latest.timestamp) : 'N/A',
           latest != null ? dateFormat.format(latest.timestamp) : 'N/A',
           latest != null ? "Lugar: ${latest.location.displayName}" : ''
@@ -593,7 +592,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
 
       int detailRowIndex = 1;
       for (var event in _filteredEvents) {
-        final username = event.username ?? _userNamesMap[event.userId] ?? 'Usuario Desconocido';
+        final username = event.displayName ?? _userNamesMap[event.userId] ?? 'Usuario Desconocido';
         
         sheetHistorico.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: detailRowIndex)).value = TextCellValue(event.id);
         sheetHistorico.cell(CellIndex.indexByColumnRow(columnIndex: 1, rowIndex: detailRowIndex)).value = TextCellValue(event.userId);
@@ -669,7 +668,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF121212),
+                      color: const Color(0xFF000000),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: Colors.white10),
                     ),
@@ -750,7 +749,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFF000000),
       appBar: AppBar(
         title: const Text('Estadísticas Anuales', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
@@ -776,16 +775,6 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
               onChanged: _onYearChanged,
             ),
           if (!_isLoading && _filteredEvents.isNotEmpty) ...[
-            IconButton(
-              icon: const Icon(Icons.map_rounded, color: Colors.amberAccent),
-              tooltip: 'Ver Mapa de Calor y Territorios',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const HeatmapScreen()),
-                );
-              },
-            ),
             IconButton(
               icon: const Icon(Icons.file_download_rounded, color: Colors.greenAccent),
               tooltip: 'Exportar a Excel',
@@ -942,19 +931,19 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
           children: [
             _buildRecordCard(
               'Jurásica Máxima',
-              heaviest != null ? '${heaviest.username ?? 'Usuario'}\n${heaviest.estimatedWeight} g' : 'Sin registros',
+              heaviest != null ? '${heaviest.displayName ?? 'Usuario'}\n${heaviest.estimatedWeight} g' : 'Sin registros',
               '👑 La más pesada',
               Colors.orange[400]!,
             ),
             _buildRecordCard(
               'Trono de Hierro',
-              longest != null ? '${longest.username ?? 'Usuario'}\n${(longest.duration! / 60).round()} min' : 'Sin registros',
+              longest != null ? '${longest.displayName ?? 'Usuario'}\n${(longest.duration! / 60).round()} min' : 'Sin registros',
               '⏳ La sesión más larga',
               Colors.blue[400]!,
             ),
             _buildRecordCard(
               'El Rayo',
-              shortest != null ? '${shortest.username ?? 'Usuario'}\n${shortest.duration} seg' : 'Sin registros',
+              shortest != null ? '${shortest.displayName ?? 'Usuario'}\n${shortest.duration} seg' : 'Sin registros',
               '⚡ La más rápida',
               Colors.yellow[600]!,
             ),
@@ -966,13 +955,13 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
             ),
             _buildRecordCard(
               'El Madrugador',
-              earliest != null ? '${earliest.username ?? 'Usuario'}\n${DateFormat('HH:mm').format(earliest.timestamp)}' : 'Sin registros',
+              earliest != null ? '${earliest.displayName ?? 'Usuario'}\n${DateFormat('HH:mm').format(earliest.timestamp)}' : 'Sin registros',
               '☀️ Caca más temprana',
               Colors.amber[400]!,
             ),
             _buildRecordCard(
               'El Noctámbulo',
-              latest != null ? '${latest.username ?? 'Usuario'}\n${DateFormat('HH:mm').format(latest.timestamp)}' : 'Sin registros',
+              latest != null ? '${latest.displayName ?? 'Usuario'}\n${DateFormat('HH:mm').format(latest.timestamp)}' : 'Sin registros',
               '🦉 Caca más tardía',
               Colors.purple[300]!,
             ),
@@ -1125,10 +1114,12 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
     final normalCount = counts[Consistency.normal] ?? 0;
     final jurasicaCount = counts[Consistency.jurasica] ?? 0;
     final espurruteoCount = counts[Consistency.espurruteo] ?? 0;
+    final cabraCount = counts[Consistency.cabra] ?? 0;
 
     final normalPct = total == 0 ? 0.0 : normalCount / total;
     final jurasicaPct = total == 0 ? 0.0 : jurasicaCount / total;
     final espurruteoPct = total == 0 ? 0.0 : espurruteoCount / total;
+    final cabraPct = total == 0 ? 0.0 : cabraCount / total;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1189,17 +1180,33 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
                         ),
                       ),
                     ),
+                  if (cabraCount > 0)
+                    Expanded(
+                      flex: cabraCount,
+                      child: Container(
+                        color: Colors.grey[700],
+                        child: const Center(
+                          child: Text(
+                            'C',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _buildLegendItem('Normal', Colors.green[600]!, normalPct),
               _buildLegendItem('Jurásica', Colors.brown[600]!, jurasicaPct),
               _buildLegendItem('Espurruteo', Colors.amber[700]!, espurruteoPct),
+              _buildLegendItem('Cabra', Colors.grey[700]!, cabraPct),
             ],
           ),
         ],
@@ -1389,7 +1396,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF121212),
+        color: const Color(0xFF000000),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(

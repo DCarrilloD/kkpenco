@@ -11,7 +11,8 @@ import '../models/event.dart';
 import '../models/chat_message.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
-import 'trono_zen_screen.dart';
+import '../widgets/responsive_layout.dart';
+import 'juanito_mode_screen.dart';
 
 class TrackerScreen extends StatefulWidget {
   const TrackerScreen({super.key});
@@ -20,7 +21,7 @@ class TrackerScreen extends StatefulWidget {
   State<TrackerScreen> createState() => _TrackerScreenState();
 }
 
-class _TrackerScreenState extends State<TrackerScreen> {
+class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserver {
   final _dbService = DatabaseService();
   final _authService = AuthService();
   final _notesController = TextEditingController();
@@ -46,9 +47,14 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
   bool _isAdmin = false;
 
+  bool _isStopwatchRunning = false;
+  int _stopwatchSeconds = 0;
+  Timer? _stopwatchTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_scrollListener);
     _loadFirstPage();
     _loadAutoGeolocatePreference();
@@ -88,9 +94,32 @@ class _TrackerScreenState extends State<TrackerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopwatchTimer?.cancel();
     _scrollController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
+      if (_isStopwatchRunning && _stopwatchTimer != null) {
+        _stopwatchTimer?.cancel();
+        _stopwatchTimer = null;
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      if (_isStopwatchRunning && _stopwatchTimer == null) {
+        _stopwatchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+          if (mounted) {
+            setState(() {
+              _stopwatchSeconds++;
+              _durationMinutes = (_stopwatchSeconds / 60).clamp(0.1, 999.0);
+            });
+          }
+        });
+      }
+    }
   }
 
   void _scrollListener() {
@@ -214,7 +243,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
         // Obtener posición actual con timeout de 6 segundos
         final position = await Geolocator.getCurrentPosition(
           locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
+            accuracy: LocationAccuracy.medium,
             timeLimit: Duration(seconds: 6),
           ),
         );
@@ -276,10 +305,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
   Future<void> _launchMap(double lat, double lon) async {
     final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lon');
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url, mode: LaunchMode.externalApplication);
-      } else {
-        throw 'No se pudo abrir la URL del mapa.';
+      // Intentamos abrir la URL directamente sin comprobar canLaunchUrl (que requiere manifiesto extra en Android 11+)
+      final success = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!success) {
+        throw 'No se pudo abrir la URL del mapa. Verifica que tienes un navegador instalado.';
       }
     } catch (e) {
       if (mounted) {
@@ -299,12 +328,12 @@ class _TrackerScreenState extends State<TrackerScreen> {
     });
 
     try {
-      final durationSecs = (_durationMinutes * 60).toInt();
+      final durationSecs = _stopwatchSeconds > 0 ? _stopwatchSeconds : (_durationMinutes * 60).toInt();
 
       final newEvent = KKEvent(
         id: 'mock_${DateTime.now().millisecondsSinceEpoch}', // ID temporal para simulación/local
         userId: user.uid,
-        username: user.displayName ?? 'Usuario',
+        displayName: user.displayName,
         timestamp: DateTime.now(),
         duration: durationSecs,
         consistency: _selectedConsistency,
@@ -326,7 +355,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
       // Haptic feedback impact when saving poop
       HapticFeedback.mediumImpact();
 
-      _notesController.clear();
+              _stopwatchTimer?.cancel();
+        _isStopwatchRunning = false;
+        _stopwatchSeconds = 0;
+        _notesController.clear();
       setState(() {
         _selectedConsistency = Consistency.normal;
         _selectedLocation = LocationTag.casa;
@@ -379,7 +411,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
     final chatMsg = ChatMessage(
       id: '',
       userId: user.uid,
-      username: user.displayName ?? 'Usuario',
+      displayName: user.displayName,
       content: '¡Ha compartido un registro de caca! 💩',
       timestamp: DateTime.now(),
       type: 'share_poop',
@@ -500,6 +532,74 @@ class _TrackerScreenState extends State<TrackerScreen> {
     }
   }
 
+  void _showInfoModal() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.info_outline_rounded, color: Colors.blueAccent),
+              SizedBox(width: 10),
+              Text('¿Cómo registrar?', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            ],
+          ),
+          content: const SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '1. Elige la Consistencia:',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Cada tipo (Cabra, Normal...) tiene un peso base diferente. Cuanto más "pesada" sea, más KKKoins ganarás.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  '2. Tiempo exacto vs estimado:',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'El botón del cronómetro manda sobre la barra de tiempo. Es decir, si activas el cronómetro mientras estás en el baño, se guardará el tiempo exacto, ignorando lo que marque la barra. Si te has olvidado de encenderlo, no pasa nada, simplemente usa la barra para poner un tiempo estimado.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  '3. Elige color y dificultad:',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Una mayor dificultad añadirá un bonus a los gramos finales.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                SizedBox(height: 12),
+                Text(
+                  '4. Modo Juanito:',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  '¿Te aburres en el trono? Activa el "Modo Juanito" para echar una partida a minijuegos y ganar KKKoins extras mientras esperas a terminar tu obra.',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('¡Entendido!', style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildConsistencyCard(Consistency consistency, IconData icon, Color activeColor) {
     final isSelected = _selectedConsistency == consistency;
     return Expanded(
@@ -536,6 +636,15 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   fontSize: 13,
                 ),
               ),
+              const SizedBox(height: 2),
+              Text(
+                '${consistency.baseWeight}g',
+                style: TextStyle(
+                  color: isSelected ? activeColor.withAlpha(200) : Colors.grey[600],
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ],
           ),
         ),
@@ -567,37 +676,53 @@ class _TrackerScreenState extends State<TrackerScreen> {
     final user = _authService.currentUser;
     if (user == null) return const Center(child: CircularProgressIndicator());
 
-    return Scaffold(
-      backgroundColor: const Color(0xFF121212),
-      appBar: AppBar(
-        title: const Text('Tracker', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+    return ResponsiveLayout(
+      child: Scaffold(
+        backgroundColor: const Color(0xFF000000),
+        body: Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 24.0),
+                      child: Image.asset(
+                        'assets/images/tracker_logo.png',
+                        height: MediaQuery.of(context).size.height * 0.30,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
 
 
-                  // Consistencia
-                  const Text(
-                    'Consistencia',
-                    style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Consistencia',
+                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.info_outline_rounded, color: Colors.blueAccent),
+                        onPressed: _showInfoModal,
+                        tooltip: 'Cómo funciona',
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 10),
                   Row(
                     children: [
-                      _buildConsistencyCard(Consistency.normal, Icons.check_circle_outline_rounded, Colors.green),
-                      const SizedBox(width: 10),
-                      _buildConsistencyCard(Consistency.jurasica, Icons.terrain_rounded, Colors.orange),
-                      const SizedBox(width: 10),
+                      _buildConsistencyCard(Consistency.cabra, Icons.scatter_plot_rounded, Colors.brown),
+                      const SizedBox(width: 8),
                       _buildConsistencyCard(Consistency.espurruteo, Icons.water_drop_rounded, Colors.blue),
+                      const SizedBox(width: 8),
+                      _buildConsistencyCard(Consistency.normal, Icons.check_circle_outline_rounded, Colors.green),
+                      const SizedBox(width: 8),
+                      _buildConsistencyCard(Consistency.jurasica, Icons.terrain_rounded, Colors.orange),
                     ],
                   ),
                   const SizedBox(height: 28),
@@ -658,39 +783,117 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // Control de Duración
+                  // Control de Duración y Cronómetro
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Duración',
-                        style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                      Expanded(
+                        flex: 1,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Duración',
+                                  style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  '${_durationMinutes.toInt()} min',
+                                  style: TextStyle(
+                                    color: Colors.brown[400],
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Slider(
+                              value: _durationMinutes,
+                              min: 1,
+                              max: 60,
+                              divisions: 59,
+                              activeColor: Colors.brown[400],
+                              inactiveColor: Colors.grey[800],
+                              onChanged: (val) {
+                                if (val.toInt() != _durationMinutes.toInt()) {
+                                  HapticFeedback.lightImpact();
+                                }
+                                setState(() {
+                                  _durationMinutes = val;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                      Text(
-                        '${_durationMinutes.toInt()} min',
-                        style: TextStyle(
-                          color: Colors.brown[400],
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 1,
+                        child: GestureDetector(
+                          onTap: () {
+                            if (_isStopwatchRunning) {
+                              _stopwatchTimer?.cancel();
+                              setState(() {
+                                _isStopwatchRunning = false;
+                              });
+                            } else {
+                              setState(() {
+                                _isStopwatchRunning = true;
+                                if (_stopwatchSeconds == 0) {
+                                  _stopwatchSeconds = 0;
+                                }
+                              });
+                              _stopwatchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+                                setState(() {
+                                  _stopwatchSeconds++;
+                                });
+                              });
+                            }
+                          },
+                          onLongPress: () {
+                            // Resetear cronómetro si se mantiene pulsado
+                            if (!_isStopwatchRunning && _stopwatchSeconds > 0) {
+                               setState(() {
+                                 _stopwatchSeconds = 0;
+                               });
+                            }
+                          },
+                          child: Container(
+                            height: 60,
+                            decoration: BoxDecoration(
+                              color: _isStopwatchRunning ? Colors.redAccent.withAlpha(50) : (_stopwatchSeconds > 0 ? Colors.greenAccent.withAlpha(20) : const Color(0xFF1E1E1E)),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: _isStopwatchRunning ? Colors.redAccent : (_stopwatchSeconds > 0 ? Colors.greenAccent : Colors.white12),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _isStopwatchRunning ? Icons.stop_rounded : (_stopwatchSeconds > 0 ? Icons.play_arrow_rounded : Icons.timer_rounded),
+                                  color: _isStopwatchRunning ? Colors.redAccent : (_stopwatchSeconds > 0 ? Colors.greenAccent : Colors.grey),
+                                  size: 20,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _stopwatchSeconds > 0 
+                                      ? '${(_stopwatchSeconds ~/ 60).toString().padLeft(2, '0')}:${(_stopwatchSeconds % 60).toString().padLeft(2, '0')}'
+                                      : 'Cronometrar',
+                                  style: TextStyle(
+                                    color: _isStopwatchRunning ? Colors.redAccent : (_stopwatchSeconds > 0 ? Colors.greenAccent : Colors.grey),
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ],
-                  ),
-                  Slider(
-                    value: _durationMinutes,
-                    min: 1,
-                    max: 60,
-                    divisions: 59,
-                    activeColor: Colors.brown[400],
-                    inactiveColor: Colors.grey[800],
-                    onChanged: (val) {
-                      if (val.toInt() != _durationMinutes.toInt()) {
-                        HapticFeedback.lightImpact();
-                      }
-                      setState(() {
-                        _durationMinutes = val;
-                      });
-                    },
                   ),
                   const SizedBox(height: 28),
 
@@ -783,7 +986,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
                   ),
                   const SizedBox(height: 28),
 
-                  // Botones Registrar KK & Modo Trono Zen
+                  // Botones Registrar KK & Modo Juanito
                   Row(
                     children: [
                       // Botón Registrar KK (Premium)
@@ -817,14 +1020,14 @@ class _TrackerScreenState extends State<TrackerScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // Botón Modo Trono Zen (Premium con presencia)
+                      // Botón Modo Juanito (Premium con presencia)
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed: () async {
                             HapticFeedback.mediumImpact();
                             final double? duration = await Navigator.push<double>(
                               context,
-                              MaterialPageRoute(builder: (context) => const TronoZenScreen()),
+                              MaterialPageRoute(builder: (context) => const JuanitoModeScreen()),
                             );
                             if (duration != null) {
                               setState(() {
@@ -834,7 +1037,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
                           },
                           icon: const Icon(Icons.self_improvement_rounded, color: Colors.amberAccent, size: 30),
                           label: const Text(
-                            'Modo Trono Zen',
+                            'Modo Juanito',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: Colors.amberAccent, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 0.5),
                           ),
@@ -945,6 +1148,10 @@ class _TrackerScreenState extends State<TrackerScreen> {
                         IconData indicatorIcon;
 
                         switch (event.consistency) {
+                          case Consistency.cabra:
+                            indicatorColor = Colors.brown;
+                            indicatorIcon = Icons.scatter_plot_rounded;
+                            break;
                           case Consistency.normal:
                             indicatorColor = Colors.green;
                             indicatorIcon = Icons.check_circle_outline_rounded;
@@ -1093,6 +1300,7 @@ class _TrackerScreenState extends State<TrackerScreen> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

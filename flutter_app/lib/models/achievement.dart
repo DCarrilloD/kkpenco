@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 
+enum AchievementCategory {
+  firstSteps,
+  streaks,
+  calendar,
+  stats,
+  locations,
+  social,
+  games
+}
+
+
 class Achievement {
   final String id;
   final String title;
@@ -7,6 +18,7 @@ class Achievement {
   final String? rewardTitle;
   final IconData icon;
   final Color color;
+  final AchievementCategory category;
 
   const Achievement({
     required this.id,
@@ -15,10 +27,12 @@ class Achievement {
     this.rewardTitle,
     required this.icon,
     required this.color,
+    required this.category,
   });
 
   static const List<Achievement> list = [
     Achievement(
+      category: AchievementCategory.firstSteps,
       id: 'first_poop',
       title: 'El Bautismo de Fuego',
       description: 'Registra tu primera deposición en la app.',
@@ -27,6 +41,7 @@ class Achievement {
       color: Colors.blue,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'speedrunner',
       title: 'El Rayo del Váter',
       description: 'Completa una deposición en menos de 1 minuto.',
@@ -35,6 +50,7 @@ class Achievement {
       color: Colors.amber,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'meditator',
       title: 'Filósofo del Trono',
       description: 'Pasa más de 25 minutos en una sola sesión.',
@@ -43,6 +59,7 @@ class Achievement {
       color: Colors.purple,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'streak_3',
       title: 'Hábito Saludable',
       description: 'Consigue una racha de 3 días seguidos.',
@@ -51,6 +68,7 @@ class Achievement {
       color: Colors.orange,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'streak_7',
       title: 'Semana de Acero',
       description: 'Consigue una racha de 7 días seguidos.',
@@ -59,6 +77,7 @@ class Achievement {
       color: Colors.teal,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'streak_15',
       title: 'Inmortalidad Intestinal',
       description: 'Consigue una racha de 15 días seguidos.',
@@ -67,6 +86,7 @@ class Achievement {
       color: Colors.redAccent,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'colossus',
       title: 'La Jurásica Suprema',
       description: 'Registra una deposición de más de 500g estimados.',
@@ -75,6 +95,7 @@ class Achievement {
       color: Colors.brown,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'feather',
       title: 'Ligero como una Pluma',
       description: 'Registra una deposición de menos de 80g estimados.',
@@ -83,6 +104,7 @@ class Achievement {
       color: Colors.lightBlueAccent,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'forest',
       title: 'Llamada Salvaje',
       description: 'Registra una caca en la ubicación Naturaleza.',
@@ -91,6 +113,7 @@ class Achievement {
       color: Colors.green,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'office',
       title: 'Productividad Corporativa',
       description: 'Registra una caca en la ubicación Trabajo.',
@@ -99,6 +122,7 @@ class Achievement {
       color: Colors.blueGrey,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'early_bird',
       title: 'Caca de Oro Madrugadora',
       description: 'Registra una caca entre las 05:00 y las 08:00 AM.',
@@ -107,6 +131,7 @@ class Achievement {
       color: Colors.orangeAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'night_owl',
       title: 'El Fantasma del Trono',
       description: 'Registra una caca entre las 00:00 y las 04:00 AM.',
@@ -115,6 +140,7 @@ class Achievement {
       color: Colors.indigo,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'socializer',
       title: 'Orgullo Compartido',
       description: 'Comparte un registro de caca en el chat COS.',
@@ -123,6 +149,7 @@ class Achievement {
       color: Colors.pink,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'critic',
       title: 'Crítico de Retrete',
       description: 'Reacciona a 10 mensajes en el chat COS.',
@@ -131,6 +158,7 @@ class Achievement {
       color: Colors.deepPurple,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'explorer',
       title: 'Cartógrafo del Trono',
       description: 'Registra deposiciones en 3 coordenadas GPS distintas.',
@@ -139,6 +167,7 @@ class Achievement {
       color: Colors.cyan,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'conqueror',
       title: 'Mi Propio Imperio',
       description: 'Conviértete en el "Señor del Trono" de al menos una ubicación.',
@@ -147,6 +176,7 @@ class Achievement {
       color: Colors.amberAccent,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'duelist',
       title: 'Honor en el Retrete',
       description: 'Gana tu primer duelo 1v1 semanal.',
@@ -155,6 +185,7 @@ class Achievement {
       color: Colors.deepOrangeAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'festive',
       title: 'Caca Festiva',
       description: 'Registra un evento el 25 de diciembre o el 1 de enero.',
@@ -163,14 +194,16 @@ class Achievement {
       color: Colors.red,
     ),
     Achievement(
+      category: AchievementCategory.firstSteps,
       id: 'zen_player',
       title: 'Iniciación Zen',
-      description: 'Juega al minijuego del Modo Trono Zen por primera vez.',
+      description: 'Juega al minijuego del Modo Juanito por primera vez.',
       rewardTitle: 'Monje del Trono',
       icon: Icons.videogame_asset_rounded,
       color: Colors.lightGreenAccent,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'high_scorer',
       title: 'Leyenda del Papel Higiénico',
       description: 'Logra más de 50 puntos en el minijuego Caca Catch.',
@@ -180,6 +213,7 @@ class Achievement {
     ),
     // --- NUEVOS LOGROS (FASE 12 EXTENDIDA) ---
     Achievement(
+      category: AchievementCategory.locations,
       id: 'worker_of_the_month',
       title: 'Trabajador del Mes',
       description: 'Registra 20 deposiciones en la ubicación Trabajo en un mismo mes.',
@@ -188,6 +222,7 @@ class Achievement {
       color: Colors.amber,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'poop_rainbow',
       title: 'Arcoíris del Inodoro',
       description: 'Registra deposiciones de 5 colores distintos.',
@@ -196,6 +231,7 @@ class Achievement {
       color: Colors.purple,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'poop_variety',
       title: 'Sumiller de Consistencias',
       description: 'Registra al menos una deposición de cada tipo de consistencia.',
@@ -204,6 +240,7 @@ class Achievement {
       color: Colors.blueGrey,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'weight_champion',
       title: 'Peso Pesado',
       description: 'Acumula 5 kg (5000g) de caca estimados en total.',
@@ -212,6 +249,7 @@ class Achievement {
       color: Colors.brown,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'night_stalker',
       title: 'Vigilante Nocturno',
       description: 'Registra 10 cacas en horario nocturno (00:00 a 04:00 AM).',
@@ -220,6 +258,7 @@ class Achievement {
       color: Colors.indigo,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'speed_demon',
       title: 'Fórmula 1 del Váter',
       description: 'Registra 5 cacas de menos de 1 minuto.',
@@ -228,6 +267,7 @@ class Achievement {
       color: Colors.amberAccent,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'marathoner',
       title: 'Maratonista de Porcelana',
       description: 'Registra 10 cacas de más de 25 minutos.',
@@ -236,6 +276,7 @@ class Achievement {
       color: Colors.cyanAccent,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'streak_30',
       title: 'El Mes de Oro',
       description: 'Consigue una racha de 30 días seguidos.',
@@ -244,6 +285,7 @@ class Achievement {
       color: Colors.orange,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'streak_50',
       title: 'Mitad de Siglo',
       description: 'Consigue una racha de 50 días seguidos.',
@@ -252,6 +294,7 @@ class Achievement {
       color: Colors.pinkAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'weekend_warrior',
       title: 'Guerrero del Fin de Semana',
       description: 'Registra 15 cacas en días de fin de semana (sábados o domingos).',
@@ -260,6 +303,7 @@ class Achievement {
       color: Colors.greenAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'double_drop',
       title: 'Doble Impacto',
       description: 'Registra 2 deposiciones en el mismo día.',
@@ -268,6 +312,7 @@ class Achievement {
       color: Colors.deepOrange,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'triple_drop',
       title: 'Trilogía del Trono',
       description: 'Registra 3 deposiciones en el mismo día.',
@@ -276,6 +321,7 @@ class Achievement {
       color: Colors.red,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'office_overtime',
       title: 'Horas Extra en el Trono',
       description: 'Registra una caca en el Trabajo fuera de las horas comunes de oficina (de 18:00 a 08:00).',
@@ -284,6 +330,7 @@ class Achievement {
       color: Colors.lightBlue,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'green_peace',
       title: 'Guardabosques',
       description: 'Registra 5 cacas en la ubicación Naturaleza.',
@@ -292,6 +339,7 @@ class Achievement {
       color: Colors.lightGreen,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'gps_mapper',
       title: 'Explorador del Mundo',
       description: 'Registra deposiciones en 10 coordenadas GPS distintas.',
@@ -300,6 +348,7 @@ class Achievement {
       color: Colors.tealAccent,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'perfect_attendance',
       title: 'Paz Interior',
       description: 'Registra 5 cacas seguidas con dificultad mínima (dificultad = 1).',
@@ -308,6 +357,7 @@ class Achievement {
       color: Colors.blueAccent,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'hard_worker',
       title: 'El Gran Esfuerzo',
       description: 'Registra 5 cacas seguidas con dificultad máxima (dificultad = 5).',
@@ -316,6 +366,7 @@ class Achievement {
       color: Colors.redAccent,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'nudge_master',
       title: 'El Pesado de las Rachas',
       description: 'Envía 10 empujones de racha (Nudges) a tus compañeros.',
@@ -324,6 +375,7 @@ class Achievement {
       color: Colors.orangeAccent,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'duel_master',
       title: 'Veterano de Guerra',
       description: 'Participa en 5 duelos (ya sea ganando o perdiendo).',
@@ -332,6 +384,7 @@ class Achievement {
       color: Colors.red,
     ),
     Achievement(
+      category: AchievementCategory.social,
       id: 'toilet_photo',
       title: 'Fotógrafo de Retrete',
       description: 'Envía 5 fotos al chat COS.',
@@ -340,6 +393,7 @@ class Achievement {
       color: Colors.pink,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'flappy_expert',
       title: 'Piloto de Cañerías',
       description: 'Consigue 25 puntos en Flappy Poop.',
@@ -348,6 +402,7 @@ class Achievement {
       color: Colors.deepPurpleAccent,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'jump_master',
       title: 'Caca de Altura',
       description: 'Alcanza una altura de 1000m en Toilet Jump.',
@@ -356,22 +411,25 @@ class Achievement {
       color: Colors.orangeAccent,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'caca_capitalist',
       title: 'Magnate del Estiércol',
-      description: 'Acumula 500 Kakadólares (Zen K-Coins) en total.',
+      description: 'Acumula 500 KKKoins en total.',
       rewardTitle: 'Magnate del Trono',
       icon: Icons.monetization_on_rounded,
       color: Colors.amber,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'fashion_poop',
       title: 'Caca de Alta Costura',
-      description: 'Desbloquea 3 aspectos (skins) en la Tienda del Trono Zen.',
+      description: 'Desbloquea 3 aspectos (skins) en la Tienda de Juanito.',
       rewardTitle: 'Estilista de Porcelana',
       icon: Icons.checkroom_rounded,
       color: Colors.pink,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'conquistador_internacional',
       title: 'Trotamundos del Trono',
       description: 'Registra deposiciones en al menos 2 países diferentes.',
@@ -380,6 +438,7 @@ class Achievement {
       color: Colors.indigoAccent,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'world_leader',
       title: 'Presidente Global',
       description: 'Conviértete en el conquistador nacional (líder) de un país.',
@@ -388,6 +447,7 @@ class Achievement {
       color: Colors.greenAccent,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'poop_colonizer',
       title: 'Colonos de la Tierra',
       description: 'Registra deposiciones en 3 o más países distintos.',
@@ -396,6 +456,7 @@ class Achievement {
       color: Colors.purpleAccent,
     ),
     Achievement(
+      category: AchievementCategory.games,
       id: 'invaders_expert',
       title: 'Defensor de la Porcelana',
       description: 'Consigue más de 100 puntos en Poop Invaders.',
@@ -404,6 +465,16 @@ class Achievement {
       color: Colors.greenAccent,
     ),
     Achievement(
+      category: AchievementCategory.games,
+      id: 'invaders_champion',
+      title: 'Héroe Galáctico',
+      description: 'Vence al Virus Supremo en Poop Invaders.',
+      rewardTitle: 'Salvador',
+      icon: Icons.military_tech_rounded,
+      color: Colors.amberAccent,
+    ),
+    Achievement(
+      category: AchievementCategory.calendar,
       id: 'year_poop_100',
       title: 'Centurión del Trono',
       description: 'Registra 100 deposiciones en un mismo año.',
@@ -412,6 +483,7 @@ class Achievement {
       color: Colors.blueAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'year_poop_200',
       title: 'Gladiador Anual',
       description: 'Registra 200 deposiciones en un mismo año.',
@@ -420,6 +492,7 @@ class Achievement {
       color: Colors.indigoAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'year_poop_300',
       title: 'Espartano del Váter',
       description: 'Registra 300 deposiciones en un mismo año.',
@@ -428,6 +501,7 @@ class Achievement {
       color: Colors.amberAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'year_poop_400',
       title: 'Emperador de la Porcelana',
       description: 'Registra 400 deposiciones en un mismo año.',
@@ -436,6 +510,7 @@ class Achievement {
       color: Colors.redAccent,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'time_marathoner_10h',
       title: 'El Pensador Eterno',
       description: 'Pasa un total acumulado de 10 horas en el inodoro.',
@@ -444,6 +519,7 @@ class Achievement {
       color: Colors.deepPurpleAccent,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'out_of_home_50',
       title: 'Defecador Errante',
       description: 'Registra 50 deposiciones en total fuera de casa.',
@@ -452,6 +528,7 @@ class Achievement {
       color: Colors.tealAccent,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'heavy_weight_20kg',
       title: 'El Titán de Porcelana',
       description: 'Acumula un total de 20 kg de caca estimados en tu historial.',
@@ -460,6 +537,7 @@ class Achievement {
       color: Colors.brown,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'all_day_active',
       title: 'El Reloj del Trono',
       description: 'Registra al menos una deposición en 12 franjas horarias distintas del día.',
@@ -468,6 +546,7 @@ class Achievement {
       color: Colors.amberAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'monthly_poop_50',
       title: 'La Regularidad del Mes',
       description: 'Registra 50 deposiciones en un mismo mes natural.',
@@ -476,6 +555,7 @@ class Achievement {
       color: Colors.redAccent,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'monthly_consistency_12',
       title: 'Calendario Completo',
       description: 'Registra al menos una deposición en cada uno de los 12 meses del año.',
@@ -484,6 +564,7 @@ class Achievement {
       color: Colors.teal,
     ),
     Achievement(
+      category: AchievementCategory.calendar,
       id: 'four_seasons',
       title: 'Las Cuatro Estaciones',
       description: 'Registra al menos una deposición en cada estación del año (Primavera, Verano, Otoño, Invierno).',
@@ -492,6 +573,7 @@ class Achievement {
       color: Colors.orangeAccent,
     ),
     Achievement(
+      category: AchievementCategory.locations,
       id: 'gps_nomad_30',
       title: 'El GeoCagador Profesional',
       description: 'Registra deposiciones en 30 coordenadas GPS diferentes.',
@@ -500,6 +582,7 @@ class Achievement {
       color: Colors.deepPurple,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'year_active_days_100',
       title: 'Constancia del Hábito',
       description: 'Registra deposiciones en al menos 100 días diferentes dentro de un mismo año.',
@@ -508,6 +591,7 @@ class Achievement {
       color: Colors.green,
     ),
     Achievement(
+      category: AchievementCategory.streaks,
       id: 'regularity_expert_100',
       title: 'El Reloj de Cuco',
       description: 'Registra al menos 100 deposiciones en tu misma franja horaria favorita (hora exacta de 0 a 23).',
@@ -516,6 +600,7 @@ class Achievement {
       color: Colors.amber,
     ),
     Achievement(
+      category: AchievementCategory.stats,
       id: 'weight_titan_100kg',
       title: 'Excavador Continental',
       description: 'Acumula un total de 100 kg de caca estimados en tu historial.',
@@ -524,4 +609,34 @@ class Achievement {
       color: Colors.brown,
     ),
   ];
+
+  static AchievementCategory? getCategoryByTitle(String? rewardTitle) {
+    if (rewardTitle == null) return null;
+    try {
+      final ach = list.firstWhere((a) => a.rewardTitle == rewardTitle);
+      return ach.category;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static String getBuffDescription(AchievementCategory? category) {
+    if (category == null) return 'Sin poder activo.';
+    switch (category) {
+      case AchievementCategory.streaks:
+        return 'Fiebre del Oro: +25% KKKoins en minijuegos.';
+      case AchievementCategory.calendar:
+        return 'Suerte Madrugadora: +20% probabilidad de objetos especiales.';
+      case AchievementCategory.stats:
+        return 'Atleta del Retrete: Mayor impulso y agilidad en minijuegos.';
+      case AchievementCategory.locations:
+        return 'Trotamundos Flotante: -10% efecto de la gravedad.';
+      case AchievementCategory.social:
+        return 'Carisma Intimidante: -15% salud máxima en Jefes Finales.';
+      case AchievementCategory.games:
+        return 'Alma de Arcade: +1 vida extra pasiva / escudo.';
+      case AchievementCategory.firstSteps:
+        return 'Moda Inicial: Sin efecto adicional.';
+    }
+  }
 }

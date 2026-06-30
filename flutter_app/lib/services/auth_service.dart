@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_user.dart';
 
@@ -21,7 +23,8 @@ class AuthService {
     if (user == null) return null;
     return AppUser(
       uid: user.uid,
-      displayName: user.displayName,
+      displayName: user.displayName ?? 'Sin Nombre',
+      photoURL: user.photoURL,
       email: user.email,
     );
   }
@@ -82,40 +85,49 @@ class AuthService {
 
     String role = 'user';
     if (!isFirstUser) {
-      // 2. Verificar lista blanca en Firestore
+      // 2. Temporalmente desactivamos la lista blanca para permitir libre registro
+      /*
       final authDoc = await _db.collection('authorized_emails').doc(cleanEmail).get();
       if (!authDoc.exists) {
         throw Exception('Este correo electrónico no está autorizado en esta aplicación privada. Pídele al administrador que te añada.');
       }
       final authData = authDoc.data();
       role = authData?['role'] ?? 'user';
+      */
+      role = 'user'; // Asignamos rol básico por defecto
     } else {
       role = 'admin';
     }
 
-    // 3. Crear el usuario en Firebase Auth
-    final userCredential = await _auth.createUserWithEmailAndPassword(
-      email: cleanEmail,
-      password: password,
-    );
+    try {
+      // 3. Crear el usuario en Firebase Auth
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: cleanEmail,
+        password: password,
+      );
 
-    // 4. Actualizar displayName en Firebase Auth
-    await userCredential.user?.updateDisplayName(username);
+      // 4. Actualizar displayName en Firebase Auth
+      await userCredential.user?.updateDisplayName(username);
 
-    // 5. Crear documento de usuario en Firestore con su rol
-    await _db.collection('users').doc(userCredential.user!.uid).set({
-      'username': username,
-      'email': cleanEmail,
-      'role': role,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+      // 5. Crear documento de usuario en Firestore con su rol
+      await _db.collection('users').doc(userCredential.user!.uid).set({
+        'username': username,
+        'email': cleanEmail,
+        'role': role,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
 
-    // 6. Marcar como registrado en la lista blanca si no es el primer usuario
-    if (!isFirstUser) {
-      await _db.collection('authorized_emails').doc(cleanEmail).update({'registered': true});
+      // 6. Marcar como registrado en la lista blanca si no es el primer usuario
+      /*
+      if (!isFirstUser) {
+        await _db.collection('authorized_emails').doc(cleanEmail).update({'registered': true});
+      }
+      */
+
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_translateAuthError(e.code));
     }
-
-    return userCredential;
   }
 
   // Iniciar sesión
@@ -128,16 +140,78 @@ class AuthService {
       _mockCurrentUser = AppUser(
         uid: uid,
         displayName: email.split('@')[0],
+        photoURL: null,
         email: email,
       );
       _mockUserStreamController.add(_mockCurrentUser); // Emitimos el usuario simulado
       return true;
     }
-    final userCredential = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    return userCredential;
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_translateAuthError(e.code));
+    }
+  }
+
+  String _translateAuthError(String code) {
+    switch (code) {
+      case 'weak-password':
+        return 'La contraseña proporcionada es demasiado débil.';
+      case 'email-already-in-use':
+        return 'Ya existe una cuenta para ese correo electrónico.';
+      case 'user-not-found':
+        return 'No se encontró ningún usuario con ese correo electrónico.';
+      case 'wrong-password':
+        return 'La contraseña proporcionada es incorrecta.';
+      case 'invalid-email':
+        return 'El formato del correo electrónico no es válido.';
+      case 'invalid-credential':
+        return 'Credenciales inválidas. Verifica tu correo y contraseña.';
+      default:
+        return 'Ocurrió un error de autenticación. Código: $code';
+    }
+  }
+
+
+  // Actualizar perfil (Nombre y Foto)
+  Future<void> updateProfile({String? displayName, File? avatarImage}) async {
+    if (useMockData) return;
+
+    final user = _auth.currentUser;
+    if (user == null) throw Exception('Usuario no autenticado.');
+
+    String? photoUrl = user.photoURL;
+
+    // Subir imagen si existe
+    if (avatarImage != null) {
+      final ref = FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
+      await ref.putFile(avatarImage);
+      photoUrl = await ref.getDownloadURL();
+    }
+
+    // Actualizar Firebase Auth
+    if (displayName != null) {
+      await user.updateDisplayName(displayName);
+    }
+    if (avatarImage != null) {
+      await user.updatePhotoURL(photoUrl);
+    }
+
+    // Actualizar Firestore
+    final updateData = <String, dynamic>{};
+    if (displayName != null) updateData['username'] = displayName;
+    if (photoUrl != null) updateData['photoURL'] = photoUrl;
+
+    if (updateData.isNotEmpty) {
+      await _db.collection('users').doc(user.uid).set(updateData, SetOptions(merge: true));
+    }
+    
+    // Forzar actualización del stream local (Auth reload)
+    await user.reload();
   }
 
   // Cerrar sesión
@@ -151,6 +225,39 @@ class AuthService {
   }
 
   // Cambiar contraseña
+  // Cambiar Email
+  Future<void> changeEmail({
+    required String currentPassword,
+    required String newEmail,
+  }) async {
+    if (useMockData) {
+      return;
+    }
+    final user = _auth.currentUser;
+    if (user == null || user.email == null) {
+      throw Exception('Usuario no autenticado.');
+    }
+
+    // Reautenticar al usuario
+    final cred = EmailAuthProvider.credential(
+      email: user.email!,
+      password: currentPassword,
+    );
+    await user.reauthenticateWithCredential(cred);
+
+    // Actualizar email via verification (recomendado) o directo si lo soporta
+    try {
+      await user.verifyBeforeUpdateEmail(newEmail);
+    } catch (e) {
+      // Intento por método anterior si no soporta verifyBeforeUpdateEmail
+      // ignore: deprecated_member_use
+      await user.updateEmail(newEmail);
+    }
+
+    // Actualizar también en firestore
+    await _db.collection('users').doc(user.uid).update({'email': newEmail.trim().toLowerCase()});
+  }
+
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,

@@ -2,10 +2,17 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Función de ayuda para verificar rol de admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
     // Reglas para el documento de usuario
     match /users/{uid} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == uid;
+      // Los usuarios solo pueden modificar sus propios documentos, Y NO PUEDEN elevar su rol a 'admin' si no lo son
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == resource.data.role || isAdmin());
       
       // Reglas para subcolecciones de usuarios como monthly_stats
       match /monthly_stats/{statId} {
@@ -17,19 +24,31 @@ service cloud.firestore {
     // Reglas para los eventos de caca
     match /events/{eventId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null 
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.timestamp is timestamp
+                    && request.resource.data.consistency is string
+                    && request.resource.data.color is string
+                    && request.resource.data.difficulty is number
+                    && request.resource.data.difficulty >= 1 
+                    && request.resource.data.difficulty <= 5;
+      allow update: if request.auth != null 
+                    && (resource.data.userId == request.auth.uid || isAdmin())
+                    && (!request.resource.data.keys().hasAny(['userId']) || request.resource.data.userId == resource.data.userId)
+                    && (!request.resource.data.keys().hasAny(['difficulty']) || (request.resource.data.difficulty is number && request.resource.data.difficulty >= 1 && request.resource.data.difficulty <= 5));
       allow delete: if request.auth != null 
-                    && resource.data.userId == request.auth.uid 
-                    && (request.time - resource.data.timestamp) < duration.value(5, 'm');
+                    && (isAdmin() || (resource.data.userId == request.auth.uid && (request.time - resource.data.timestamp) < duration.value(5, 'm')));
     }
     
     // Reglas para el chat
     match /chat/{messageId} {
       allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null 
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.timestamp is timestamp
+                    && request.resource.data.content is string;
       allow update: if request.auth != null; // Para permitir añadir/quitar reacciones
-      allow delete: if false; // No se permite borrar mensajes del chat
+      allow delete: if request.auth != null && isAdmin(); // Solo admins pueden borrar mensajes
     }
     
     // Reglas para presencia/escritura en chat

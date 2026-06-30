@@ -60,14 +60,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!_isTyping && _messageController.text.isNotEmpty) {
       _isTyping = true;
-      _dbService.setTypingStatus(currentUser.uid, currentUser.displayName ?? 'Usuario', true);
+      _dbService.setTypingStatus(currentUser.uid, currentUser.displayName, true);
     }
 
     _typingTimer?.cancel();
     _typingTimer = Timer(const Duration(seconds: 4), () {
       if (_isTyping) {
         _isTyping = false;
-        _dbService.setTypingStatus(currentUser.uid, currentUser.displayName ?? 'Usuario', false);
+        _dbService.setTypingStatus(currentUser.uid, currentUser.displayName, false);
       }
     });
   }
@@ -83,13 +83,13 @@ class _ChatScreenState extends State<ChatScreen> {
     _typingTimer?.cancel();
     if (_isTyping) {
       _isTyping = false;
-      _dbService.setTypingStatus(user.uid, user.displayName ?? 'Usuario', false);
+      _dbService.setTypingStatus(user.uid, user.displayName, false);
     }
 
     final newMessage = ChatMessage(
       id: '',
       userId: user.uid,
-      username: user.displayName ?? 'Usuario',
+      displayName: user.displayName,
       content: text,
       timestamp: DateTime.now(),
       type: 'text',
@@ -124,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> {
       final newMessage = ChatMessage(
         id: '',
         userId: user.uid,
-        username: user.displayName ?? 'Usuario',
+        displayName: user.displayName,
         content: '📷 Foto compartida',
         timestamp: DateTime.now(),
         type: 'image',
@@ -268,7 +268,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (currentUser == null) return const Center(child: CircularProgressIndicator());
 
     return Scaffold(
-      backgroundColor: const Color(0xFF121212),
+      backgroundColor: const Color(0xFF000000),
       appBar: AppBar(
         title: const Text('COS Chat', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
@@ -340,7 +340,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               // Nombre de usuario en mensajes de otros
                               if (!isMe)
                                 Text(
-                                  msg.username,
+                                  msg.displayName,
                                   style: TextStyle(
                                     color: Colors.brown[300],
                                     fontWeight: FontWeight.bold,
@@ -395,7 +395,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         decoration: BoxDecoration(
-                                          color: userReacted ? Colors.brown[800] : const Color(0xFF121212),
+                                          color: userReacted ? Colors.brown[800] : const Color(0xFF000000),
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
                                             color: userReacted ? Colors.amber[700]! : Colors.transparent,
@@ -517,7 +517,7 @@ class _ChatScreenState extends State<ChatScreen> {
       width: 200,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF121212),
+        color: const Color(0xFF000000),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.brown[700]!, width: 1),
       ),
