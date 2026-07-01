@@ -5,8 +5,10 @@ import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../shared_game_components.dart' show PoopSkinDrawer;
 import '../../../models/achievement.dart';
+import 'sprite_rasterizer.dart';
 
 class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetection {
   final String equippedSkin;
@@ -42,6 +44,8 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   @override
   Future<void> onLoad() async {
     super.onLoad();
+    
+    await FlameAudio.audioCache.loadAll(['jump.wav', 'hit.wav']);
     
     // Añadir fondo
     background = ParallaxBackground();
@@ -95,6 +99,7 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   void onTapDown(TapDownEvent event) {
     if (!paused) {
       player.jump();
+      FlameAudio.play('jump.wav', volume: 0.5);
     }
   }
 
@@ -188,10 +193,19 @@ class PoopPlayer extends PositionComponent with HasGameReference<FlappyPoopFlame
   double gravity = 600.0;
   double jumpForce = -300.0;
 
+  ui.Image? cachedPoopImage;
+
   PoopPlayer({required this.skin, required this.hasShield}) {
     size = Vector2(30, 30);
     anchor = Anchor.center;
     add(CircleHitbox(radius: 14, position: Vector2(1, 1)));
+  }
+
+  @override
+  Future<void> onLoad() async {
+    cachedPoopImage = await SpriteRasterizer.rasterize(32, 32, (canvas) {
+      PoopSkinDrawer.drawPoop(canvas, const Offset(16, 16), 32.0, skin: skin);
+    });
   }
 
   @override
@@ -235,12 +249,17 @@ class PoopPlayer extends PositionComponent with HasGameReference<FlappyPoopFlame
       canvas.drawCircle(Offset(size.x / 2, size.y / 2), 22, borderPaint);
     }
     
-    PoopSkinDrawer.drawPoop(canvas, Offset(size.x / 2, size.y / 2), 32.0, skin: skin);
+    if (cachedPoopImage != null) {
+      canvas.drawImage(cachedPoopImage!, Offset(size.x / 2 - 16, size.y / 2 - 16), Paint());
+    } else {
+      PoopSkinDrawer.drawPoop(canvas, Offset(size.x / 2, size.y / 2), 32.0, skin: skin);
+    }
   }
 
   void breakShield() {
     hasShield = false;
     game.addFloatingText("¡ESCUDO ROTO!", position.clone()..sub(Vector2(0, 20)), Colors.blue);
+    FlameAudio.play('hit.wav', volume: 0.8);
     velocityY = 0; // Estabiliza un poco el golpe
   }
 }

@@ -6,8 +6,10 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../shared_game_components.dart' show PoopSkinDrawer;
 import '../../../models/achievement.dart';
+import 'sprite_rasterizer.dart';
 
 class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDetection {
   final String equippedSkin;
@@ -21,6 +23,10 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   final Function(int) onLivesChanged;
   final Function(int) onWaveChanged;
   final Function(double) onTimeChanged;
+
+  // Object Pools para rendimiento extremo
+  final List<LaserComponent> inactiveLasers = [];
+  final List<GameParticleComponent> inactiveParticles = [];
 
   late PlayerShip player;
   late DeepSpaceBackground sky;
@@ -52,6 +58,12 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   @override
   Future<void> onLoad() async {
     super.onLoad();
+    
+    await FlameAudio.audioCache.loadAll([
+      'shoot.wav',
+      'explosion.wav',
+      'hit.wav',
+    ]);
     
     if (activeBuffCategory == AchievementCategory.games) lives++;
 
@@ -213,9 +225,35 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     add(FloatingTextComponent(text: text, color: color, fontSize: size)..position = pos);
   }
 
+  void spawnLaser({required Vector2 pos, required double vy, double vx = 0, required bool fromPlayer, String type = 'normal'}) {
+    for (int i = 0; i < inactiveLasers.length; i++) {
+      if (inactiveLasers[i].type == type && inactiveLasers[i].fromPlayer == fromPlayer) {
+        var l = inactiveLasers.removeAt(i);
+        l.vy = vy;
+        l.vx = vx;
+        l.position = pos.clone();
+        add(l);
+        return;
+      }
+    }
+    add(LaserComponent(vy: vy, vx: vx, fromPlayer: fromPlayer, type: type)..position = pos.clone());
+  }
+
   void spawnParticles(Vector2 pos, String emoji, int count, {double speed = 1.0}) {
     for (int i = 0; i < count; i++) {
-      add(GameParticleComponent(emoji: emoji, speedMod: speed)..position = pos.clone());
+      GameParticleComponent? p;
+      for (int j = 0; j < inactiveParticles.length; j++) {
+        if (inactiveParticles[j].emoji == emoji) {
+          p = inactiveParticles.removeAt(j);
+          p.reset(speed);
+          p.position = pos.clone();
+          add(p);
+          break;
+        }
+      }
+      if (p == null) {
+        add(GameParticleComponent(emoji: emoji, speedMod: speed)..position = pos.clone());
+      }
     }
   }
 }
@@ -275,13 +313,14 @@ class GameStar {
 
 class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFlameGame>, CollisionCallbacks {
   final String skin;
-  double tiltAngle = 0.0;
+  double tiltAngle = 0;
+  double fireCooldown = 0;
   
-  bool hasShield = false;
   double tripleShotTime = 0;
   double burstShotTime = 0;
+  bool hasShield = false;
 
-  double fireCooldown = 0;
+  ui.Image? cachedShipImage;
 
   PlayerShip({required this.skin, bool startTriple = false, bool startBurst = false}) {
     size = Vector2(60, 60);
@@ -290,6 +329,15 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
 
     if (startTriple) tripleShotTime = 6.0;
     if (startBurst) burstShotTime = 6.0;
+  }
+
+  @override
+  Future<void> onLoad() async {
+    cachedShipImage = await SpriteRasterizer.rasterize(100, 100, (canvas) {
+      final center = const Offset(50, 50);
+      _drawToiletVectorStatic(canvas, center, 60);
+      PoopSkinDrawer.drawPoop(canvas, Offset(center.dx, center.dy - 11), 32, skin: skin);
+    });
   }
 
   @override
@@ -314,12 +362,13 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
     double lSpeed = -400.0;
     
     if (tripleShotTime > 0) {
-      game.add(LaserComponent(vy: lSpeed, vx: 0, fromPlayer: true)..position = position.clone() + Vector2(0, -25));
-      game.add(LaserComponent(vy: lSpeed, vx: -80, fromPlayer: true)..position = position.clone() + Vector2(-15, -20));
-      game.add(LaserComponent(vy: lSpeed, vx: 80, fromPlayer: true)..position = position.clone() + Vector2(15, -20));
+      game.spawnLaser(pos: position.clone() + Vector2(0, -25), vy: lSpeed, vx: 0, fromPlayer: true);
+      game.spawnLaser(pos: position.clone() + Vector2(-15, -20), vy: lSpeed, vx: -80, fromPlayer: true);
+      game.spawnLaser(pos: position.clone() + Vector2(15, -20), vy: lSpeed, vx: 80, fromPlayer: true);
     } else {
-      game.add(LaserComponent(vy: lSpeed, vx: 0, fromPlayer: true)..position = position.clone() + Vector2(0, -25));
+      game.spawnLaser(pos: position.clone() + Vector2(0, -25), vy: lSpeed, vx: 0, fromPlayer: true);
     }
+    FlameAudio.play('shoot.wav', volume: 0.3);
   }
 
   @override
@@ -338,13 +387,26 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
     canvas.rotate(tiltAngle);
     canvas.translate(-center.dx, -center.dy);
 
-    _drawToiletVector(canvas, center, 60);
-    PoopSkinDrawer.drawPoop(canvas, Offset(center.dx, center.dy - 11), 32, skin: skin);
+    // Dibujar propulsores animados (fuego) debajo de la nave
+    _drawAnimatedFlames(canvas, center, 60);
+
+    if (cachedShipImage != null) {
+      canvas.drawImage(cachedShipImage!, Offset(center.dx - 50, center.dy - 50), Paint());
+    }
 
     canvas.restore();
   }
 
-  void _drawToiletVector(Canvas canvas, Offset center, double size) {
+  void _drawAnimatedFlames(Canvas canvas, Offset center, double size) {
+    final double half = size / 2;
+    final timeMs = DateTime.now().millisecondsSinceEpoch;
+    final double fireHeight = half * 0.55 + sin(timeMs * 0.035) * 3.5;
+    final flamePaint = Paint()..shader = ui.Gradient.linear(Offset(0, center.dy + half * 0.9), Offset(0, center.dy + half * 0.9 + fireHeight), [Colors.cyanAccent, Colors.blueAccent.withAlpha(0)]);
+    canvas.drawRect(Rect.fromLTWH(center.dx - half * 1.18, center.dy + half * 0.9, 6, fireHeight), flamePaint);
+    canvas.drawRect(Rect.fromLTWH(center.dx + half * 0.98, center.dy + half * 0.9, 6, fireHeight), flamePaint);
+  }
+
+  void _drawToiletVectorStatic(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
     // Alas propulsoras laterales
     final wingPaint = Paint()
@@ -354,13 +416,6 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
       ..moveTo(center.dx + half * 0.35, center.dy + half * 0.2)..lineTo(center.dx + half * 1.3, center.dy + half * 0.75)..lineTo(center.dx + half * 1.15, center.dy + half * 1.0)..lineTo(center.dx + half * 0.25, center.dy + half * 0.85);
     canvas.drawPath(wingPath, wingPaint);
     canvas.drawPath(wingPath, Paint()..color = Colors.cyanAccent..style = PaintingStyle.stroke..strokeWidth = 1.6);
-
-    // Estelas
-    final timeMs = DateTime.now().millisecondsSinceEpoch;
-    final double fireHeight = half * 0.55 + sin(timeMs * 0.035) * 3.5;
-    final flamePaint = Paint()..shader = ui.Gradient.linear(Offset(0, center.dy + half * 0.9), Offset(0, center.dy + half * 0.9 + fireHeight), [Colors.cyanAccent, Colors.blueAccent.withAlpha(0)]);
-    canvas.drawRect(Rect.fromLTWH(center.dx - half * 1.18, center.dy + half * 0.9, 6, fireHeight), flamePaint);
-    canvas.drawRect(Rect.fromLTWH(center.dx + half * 0.98, center.dy + half * 0.9, 6, fireHeight), flamePaint);
 
     // Tanque
     final tankRect = Rect.fromLTWH(center.dx - half * 0.5, center.dy - half * 0.8, half * 1.0, half * 0.6);
@@ -407,6 +462,20 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
     add(CircleHitbox(radius: lWidth / 2));
   }
 
+  ui.Image? cachedLaserImage;
+
+  @override
+  Future<void> onLoad() async {
+    cachedLaserImage = await SpriteRasterizer.rasterize(size.x * 3, size.y * 3, (canvas) {
+      _renderLaser(canvas, Offset(size.x * 1.5, size.y * 1.5));
+    });
+  }
+
+  void _disableAndPool() {
+    game.inactiveLasers.add(this);
+    removeFromParent();
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
@@ -420,10 +489,10 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
       if (type == 'lightning') vx = sin(DateTime.now().millisecondsSinceEpoch * 0.02) * 250.0;
       else if (type == 'acid' && position.y >= game.size.y * 0.5) {
         // Divide into 2
-        game.add(LaserComponent(vy: 200.0, vx: -100.0, fromPlayer: false, type: 'acid_sub')..position = position.clone());
-        game.add(LaserComponent(vy: 200.0, vx: 100.0, fromPlayer: false, type: 'acid_sub')..position = position.clone());
+        game.spawnLaser(pos: position.clone(), vy: 200.0, vx: -100.0, fromPlayer: false, type: 'acid_sub');
+        game.spawnLaser(pos: position.clone(), vy: 200.0, vx: 100.0, fromPlayer: false, type: 'acid_sub');
         game.spawnParticles(position.clone(), '🧪', 5);
-        removeFromParent();
+        _disableAndPool();
         return;
       }
     }
@@ -432,7 +501,7 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
     position.y += currentVy * dt;
 
     if (position.y < -50 || position.y > game.size.y + 50 || position.x < -50 || position.x > game.size.y + 50) {
-      removeFromParent();
+      _disableAndPool();
     }
   }
 
@@ -442,16 +511,24 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
     
     if (fromPlayer && other is InvaderEnemy) {
       other.hit();
-      removeFromParent();
+      _disableAndPool();
     } else if (!fromPlayer && other is PlayerShip) {
       if (type == 'meteor') game.spawnParticles(position.clone(), '🔥', 15, speed: 3.0);
       game.hitPlayer();
-      removeFromParent();
+      _disableAndPool();
     }
   }
 
   @override
   void render(Canvas canvas) {
+    if (cachedLaserImage != null) {
+      canvas.drawImage(cachedLaserImage!, Offset(-size.x, -size.y), Paint());
+    } else {
+      _renderLaser(canvas, Offset(size.x / 2, size.y / 2));
+    }
+  }
+
+  void _renderLaser(Canvas canvas, Offset lCenter) {
     Color laserColor = fromPlayer ? Colors.cyanAccent : Colors.purpleAccent;
     if (!fromPlayer) {
       if (type == 'meteor') laserColor = Colors.orangeAccent;
@@ -459,7 +536,6 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
       else if (type == 'acid' || type == 'acid_sub') laserColor = Colors.greenAccent[400]!;
     }
 
-    final lCenter = Offset(size.x / 2, size.y / 2);
     final glowPaint = Paint()..color = laserColor.withAlpha(100)..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);
 
     if (type == 'meteor') {
@@ -524,9 +600,10 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     if (type == 'boss') {
       _bossAttacks(dt);
     } else if (type != 'ufo') {
-      double shootChance = 0.02 + game.wave * 0.005;
-      if (Random().nextDouble() * dt < shootChance * dt) { // Adaptado a dt
-         game.add(LaserComponent(vy: 200.0, fromPlayer: false)..position = position.clone()..y += size.y / 2);
+      // Promedio de disparos por segundo por cada enemigo. En oleada 1: 0.2 tiros/seg.
+      double shotsPerSecond = 0.2 + game.wave * 0.05;
+      if (Random().nextDouble() < shotsPerSecond * dt) { 
+         game.spawnLaser(pos: position.clone()..y += size.y / 2, vy: 200.0, fromPlayer: false);
       }
       if (position.y >= game.size.y * 0.84) {
         game.triggerGameOver();
@@ -538,19 +615,20 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     bossAttackTimer += dt;
     if (bossType == 'fire' && bossAttackTimer >= 2.5) {
       bossAttackTimer = 0;
-      game.add(LaserComponent(vy: 120.0, fromPlayer: false, type: 'meteor')..position = Vector2(game.player.position.x, position.y + 30));
+      game.spawnLaser(pos: Vector2(game.player.position.x, position.y + 30), vy: 120.0, fromPlayer: false, type: 'meteor');
       game.addFloatingText('🔥 ¡METEORITO! 🔥', position.clone()..y += 30, Colors.orangeAccent);
     } else if (bossType == 'electric' && bossAttackTimer >= 2.2) {
       bossAttackTimer = 0;
-      game.add(LaserComponent(vy: 240.0, fromPlayer: false, type: 'lightning')..position = position.clone()..y += 30);
+      game.spawnLaser(pos: position.clone()..y += 30, vy: 240.0, fromPlayer: false, type: 'lightning');
       game.addFloatingText('⚡ ¡RÁPIDO ZIGZAG! ⚡', position.clone()..y += 30, Colors.cyanAccent);
     } else if (bossType == 'acid' && bossAttackTimer >= 2.0) {
       bossAttackTimer = 0;
-      game.add(LaserComponent(vy: 180.0, fromPlayer: false, type: 'acid')..position = position.clone()..x += (Random().nextDouble() - 0.5) * 60);
+      game.spawnLaser(pos: position.clone()..x += (Random().nextDouble() - 0.5) * 60, vy: 180.0, fromPlayer: false, type: 'acid');
     }
 
-    if (Random().nextDouble() < 0.04) {
-      game.add(LaserComponent(vy: 220.0, fromPlayer: false)..position = position.clone()..y += 30);
+    // El Jefe lanza un láser básico aleatoriamente (~1.2 veces por segundo)
+    if (Random().nextDouble() < 1.2 * dt) {
+      game.spawnLaser(pos: position.clone()..y += 30, vy: 220.0, fromPlayer: false);
     }
   }
 
@@ -578,6 +656,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
   void die({bool silent = false}) {
     if (!silent) {
+      FlameAudio.play('explosion.wav', volume: 0.6);
       if (type == 'boss') {
         game.isBossActive = false;
         int reward = 500 + (game.nextBossIndex - 1) * 100;
@@ -826,8 +905,8 @@ class FloatingTextComponent extends PositionComponent {
   }
 }
 
-class GameParticleComponent extends PositionComponent {
-  final String emoji;
+class GameParticleComponent extends PositionComponent with HasGameReference<PoopInvadersFlameGame> {
+  String emoji;
   final double speedMod;
   double vx = 0;
   double vy = 0;
@@ -835,10 +914,20 @@ class GameParticleComponent extends PositionComponent {
   double scaleMod = 1.0;
 
   GameParticleComponent({required this.emoji, required this.speedMod}) {
+    reset(speedMod);
+  }
+
+  void reset(double speed) {
     final rand = Random();
-    vx = (rand.nextDouble() - 0.5) * 300 * speedMod;
-    vy = (rand.nextDouble() - 0.5) * 300 * speedMod;
+    vx = (rand.nextDouble() - 0.5) * 300 * speed;
+    vy = (rand.nextDouble() - 0.5) * 300 * speed;
     scaleMod = 0.5 + rand.nextDouble() * 0.5;
+    life = 1.0;
+  }
+
+  void _disableAndPool() {
+    game.inactiveParticles.add(this);
+    removeFromParent();
   }
 
   @override
@@ -847,7 +936,7 @@ class GameParticleComponent extends PositionComponent {
     position.x += vx * dt;
     position.y += vy * dt;
     life -= dt * 2.0; // Desaparece rápido
-    if (life <= 0) removeFromParent();
+    if (life <= 0) _disableAndPool();
   }
 
   @override

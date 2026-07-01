@@ -5,7 +5,10 @@ import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../../../models/achievement.dart';
+import 'sprite_rasterizer.dart';
 
 // --- ENUMS Y CONSTANTES ---
 enum CatchItemType { poop, paper, bacteria, soap, goldenPoop, soda, chlorineBomb }
@@ -61,6 +64,8 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
   @override
   Future<void> onLoad() async {
     super.onLoad();
+    
+    await FlameAudio.audioCache.loadAll(['coin.wav', 'hit.wav']);
     
     // Configuración inicial
     lives = hasExtraLife ? 4 : 3;
@@ -152,12 +157,15 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
       if (toilet.hasShield) {
         toilet.hasShield = false;
         addFloatingText("¡Escudo Roto!", item.position, Colors.blue);
+        FlameAudio.play('hit.wav', volume: 0.8);
       } else {
         lives--;
         poopsCaughtConsecutively = 0;
         comboMultiplier = 1;
         onLivesChanged(lives);
         addFloatingText("¡Daño!", item.position, Colors.red);
+        FlameAudio.play('hit.wav', volume: 0.8);
+        HapticFeedback.heavyImpact();
         
         if (lives <= 0) {
           onGameOver(score);
@@ -175,6 +183,8 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
         sodaFrenzyTimeRemaining = 4.0;
         addFloatingText("¡Frenesí!", item.position, Colors.cyan);
       }
+
+      FlameAudio.play('coin.wav', volume: 0.6);
 
       score += points * comboMultiplier;
       onScoreChanged(score);
@@ -234,11 +244,19 @@ class BackgroundComponent extends PositionComponent with HasGameRef<CacaCatchFla
 
 class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>, CollisionCallbacks {
   bool hasShield;
+  ui.Image? cachedToiletImage;
 
   ToiletPlayer({required this.hasShield}) {
     size = Vector2(60, 60);
     anchor = Anchor.center;
     add(RectangleHitbox(size: Vector2(44, 20), position: Vector2(8, 0))); // Hitbox en la taza
+  }
+
+  @override
+  Future<void> onLoad() async {
+    cachedToiletImage = await SpriteRasterizer.rasterize(60, 60, (canvas) {
+      _drawToiletStatic(canvas, const Offset(30, 30));
+    });
   }
 
   @override
@@ -271,6 +289,16 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
         ..style = PaintingStyle.fill;
       canvas.drawCircle(center, 32, feverPaint);
     }
+
+    if (cachedToiletImage != null) {
+      canvas.drawImage(cachedToiletImage!, Offset.zero, Paint());
+    } else {
+      _drawToiletStatic(canvas, center);
+    }
+  }
+
+  void _drawToiletStatic(Canvas canvas, Offset center) {
+    final double half = 22;
 
     // 1. Tanque trasero
     final tankRect = Rect.fromLTWH(center.dx - half * 0.7, center.dy - half * 0.8, half * 1.4, half * 0.7);

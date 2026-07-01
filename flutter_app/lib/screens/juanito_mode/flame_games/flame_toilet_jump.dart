@@ -6,8 +6,10 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../shared_game_components.dart' show PoopSkinDrawer;
 import '../../../models/achievement.dart';
+import 'sprite_rasterizer.dart';
 
 enum PlatformType { normal, moving, fragile, superSpring }
 enum ItemType { none, spring, jetpack, balloon }
@@ -50,6 +52,8 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   @override
   Future<void> onLoad() async {
     super.onLoad();
+
+    await FlameAudio.audioCache.loadAll(['jump.wav', 'coin.wav', 'hit.wav']);
 
     world = World();
     cameraComponent = CameraComponent(world: world)..viewfinder.anchor = Anchor.center;
@@ -159,6 +163,7 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   }
 
   void triggerGameOver() {
+    FlameAudio.play('hit.wav', volume: 0.8);
     pauseEngine();
     HapticFeedback.vibrate();
     onGameOver(score, coinsEarned);
@@ -231,6 +236,8 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
   double scaleModX = 1.0;
   double scaleModY = 1.0;
 
+  ui.Image? cachedPoopImage;
+
   JumpingPoop({required this.skin, bool startJetpack = false, bool startSuperJump = false}) {
     size = Vector2(30, 30);
     anchor = Anchor.center;
@@ -239,6 +246,13 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
     if (startJetpack) activateJetpack();
     else if (startSuperJump) velocityY = -500.0;
     else velocityY = -280.0;
+  }
+
+  @override
+  Future<void> onLoad() async {
+    cachedPoopImage = await SpriteRasterizer.rasterize(32, 32, (canvas) {
+      PoopSkinDrawer.drawPoop(canvas, const Offset(16, 16), 30.0, skin: skin);
+    });
   }
 
   @override
@@ -255,6 +269,7 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
       scaleModX = 1.45;
       scaleModY = 0.55;
       game.addFloatingText('¡DOBLE SALTO!', position.clone()..sub(Vector2(0, 20)), Colors.cyanAccent);
+      FlameAudio.play('jump.wav', volume: 0.6);
       HapticFeedback.mediumImpact();
     }
   }
@@ -263,6 +278,7 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
     hasJetpack = true;
     jetpackTime = 2.0;
     game.addFloatingText('¡JETPACK!', position.clone()..sub(Vector2(0, 20)), Colors.blueAccent);
+    FlameAudio.play('coin.wav', volume: 0.7);
     HapticFeedback.heavyImpact();
   }
 
@@ -270,6 +286,7 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
     hasBalloon = true;
     balloonTime = 4.0;
     game.addFloatingText('¡GLOBO!', position.clone()..sub(Vector2(0, 20)), Colors.greenAccent);
+    FlameAudio.play('coin.wav', volume: 0.7);
     HapticFeedback.heavyImpact();
   }
 
@@ -319,7 +336,12 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
       canvas.drawOval(Rect.fromCenter(center: Offset(gx, gy), width: gWidth, height: gHeight), balloonPaint);
     }
 
-    PoopSkinDrawer.drawPoop(canvas, Offset.zero, 30.0, skin: skin);
+    if (cachedPoopImage != null) {
+      canvas.drawImage(cachedPoopImage!, const Offset(-16, -16), Paint());
+    } else {
+      PoopSkinDrawer.drawPoop(canvas, Offset.zero, 30.0, skin: skin);
+    }
+    
     canvas.restore();
   }
 }
@@ -373,6 +395,7 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
 
           if (type == PlatformType.fragile) {
             broken = true;
+            FlameAudio.play('hit.wav', volume: 0.4);
             HapticFeedback.vibrate();
             removeFromParent();
             return; // No bounce
@@ -380,11 +403,13 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
             other.velocityY = -550.0 * jumpMultiplier;
             other.scaleModY = 0.3;
             other.scaleModX = 1.7;
+            FlameAudio.play('jump.wav', volume: 0.4);
             HapticFeedback.heavyImpact();
           } else {
             other.velocityY = -280.0 * jumpMultiplier;
             other.scaleModY = 0.6;
             other.scaleModX = 1.4;
+            FlameAudio.play('jump.wav', volume: 0.4);
             HapticFeedback.lightImpact();
 
             // Interacción con ítems
@@ -392,6 +417,7 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
               itemUsed = true;
               springScale = 0.4;
               other.velocityY = -480.0 * jumpMultiplier;
+              FlameAudio.play('jump.wav', volume: 0.5);
               HapticFeedback.heavyImpact();
             } else if (item == ItemType.jetpack && !itemUsed) {
               itemUsed = true;
