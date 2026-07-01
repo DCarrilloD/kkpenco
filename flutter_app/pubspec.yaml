@@ -38,6 +38,8 @@ dependencies:
   firebase_storage: ^12.4.10
   cached_network_image: ^3.4.1
   flutter_displaymode: ^0.7.0
+  flame: ^1.37.0
+  flame_audio: ^2.12.1
 
 dev_dependencies:
   flutter_test:

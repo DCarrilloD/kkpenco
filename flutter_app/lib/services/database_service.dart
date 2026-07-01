@@ -1016,11 +1016,22 @@ class DatabaseService {
       final equippedSkin = prefs.getString('zen_equipped_skin_$userId') ?? '💩';
       final unlockedSkins = prefs.getStringList('zen_unlocked_skins_$userId') ?? ['💩'];
       final equippedTitle = prefs.getString('equipped_title_$userId');
+      
+      final activePowerups = {
+        'shield': prefs.getBool('zen_powerup_shield_$userId') ?? false,
+        'spring': prefs.getBool('zen_powerup_spring_$userId') ?? false,
+        'magnet': prefs.getBool('zen_powerup_magnet_$userId') ?? false,
+        'life': prefs.getBool('zen_powerup_life_$userId') ?? false,
+        'passive_magnet': prefs.getBool('zen_passive_magnet_$userId') ?? false,
+        'passive_insurance': prefs.getBool('zen_passive_insurance_$userId') ?? false,
+      };
+
       return {
         'kcoins': kcoins,
         'equippedSkin': equippedSkin,
         'unlockedSkins': unlockedSkins,
         'equippedTitle': equippedTitle,
+        'activePowerups': activePowerups,
       };
     }
     
@@ -1032,6 +1043,7 @@ class DatabaseService {
         'equippedSkin': data?['equippedSkin'] ?? '💩',
         'unlockedSkins': List<String>.from(data?['unlockedSkins'] ?? ['💩']),
         'equippedTitle': data?['equippedTitle'],
+        'activePowerups': data?['activePowerups'] ?? {},
       };
     }
     return {
@@ -1039,6 +1051,7 @@ class DatabaseService {
       'equippedSkin': '💩',
       'unlockedSkins': ['💩'],
       'equippedTitle': null,
+      'activePowerups': {},
     };
   }
 
@@ -1117,6 +1130,57 @@ class DatabaseService {
       return true;
     } catch (e) {
       debugPrint('Error al comprar skin: $e');
+      return false;
+    }
+  }
+
+  Future<bool> buyPowerupTransaction(String userId, String powerupId, int cost, {bool isPassive = false}) async {
+    try {
+      if (useMockData) {
+        final prefs = await SharedPreferences.getInstance();
+        final currentCoins = prefs.getInt('zen_kcoins_$userId') ?? 50;
+        
+        if (currentCoins < cost) return false;
+        
+        await prefs.setInt('zen_kcoins_$userId', currentCoins - cost);
+        if (isPassive) {
+          await prefs.setBool('zen_passive_${powerupId}_$userId', true);
+        } else {
+          await prefs.setBool('zen_powerup_${powerupId}_$userId', true);
+        }
+        
+        // Actualizar localmente en rankings mock
+        for (var user in _mockRankings) {
+          if (user['uid'] == userId) {
+            user['kcoins'] = currentCoins - cost;
+            break;
+          }
+        }
+        _rankingStreamController.add(List.from(_mockRankings));
+        return true;
+      }
+
+      final userRef = _db.collection('users').doc(userId);
+      return await _db.runTransaction<bool>((transaction) async {
+        final snap = await transaction.get(userRef);
+        if (!snap.exists) return false;
+        
+        final data = snap.data();
+        final currentCoins = data?['kcoins'] as int? ?? 0;
+        
+        if (currentCoins < cost) return false;
+        
+        String dbKey = isPassive ? 'activePowerups.passive_$powerupId' : 'activePowerups.$powerupId';
+        
+        transaction.update(userRef, {
+          'kcoins': FieldValue.increment(-cost),
+          dbKey: true,
+        });
+        
+        return true;
+      });
+    } catch (e) {
+      debugPrint('Error en transacción de powerup: $e');
       return false;
     }
   }

@@ -135,8 +135,15 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
           _kcoins = profile['kcoins'] ?? 0;
           _equippedSkin = profile['equippedSkin'] ?? '💩';
           _unlockedSkins = List<String>.from(profile['unlockedSkins'] ?? ['💩']);
-          _hasImprovedMagnet = prefs.getBool('zen_passive_magnet_${user.uid}') ?? false;
-          _hasLifeInsurance = prefs.getBool('zen_passive_insurance_${user.uid}') ?? false;
+          
+          final powerups = profile['activePowerups'] as Map<String, dynamic>? ?? {};
+          _hasInitialSoapShield = powerups['shield'] == true;
+          _hasInitialSpring = powerups['spring'] == true;
+          _hasFeverMagnet = powerups['magnet'] == true;
+          _hasExtraLife = powerups['life'] == true;
+          _hasImprovedMagnet = powerups['passive_magnet'] == true;
+          _hasLifeInsurance = powerups['passive_insurance'] == true;
+
           if (profile['equippedTitle'] != null) {
             _activeBuffCategory = Achievement.getCategoryByTitle(profile['equippedTitle']);
           } else {
@@ -287,7 +294,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     if (alreadyHas) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('┬íYa tienes esta mejora activa o adquirida! ­ƒÄ«'),
+          content: const Text('¡Ya tienes esta mejora activa o adquirida! 🛒'),
           backgroundColor: Colors.amber[800],
         ),
       );
@@ -295,22 +302,30 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     }
 
     HapticFeedback.mediumImpact();
-    await _dbService.addKcoins(user.uid, -cost);
     
-    final prefs = await SharedPreferences.getInstance();
+    bool isPassive = id.startsWith('passive_');
+    String dbId = isPassive ? id.replaceAll('passive_', '') : id;
+    
+    bool success = await _dbService.buyPowerupTransaction(user.uid, dbId, cost, isPassive: isPassive);
+    
+    if (!success) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Error al procesar la compra. Verifica tu conexión.'),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+    
     setState(() {
       if (id == 'shield') _hasInitialSoapShield = true;
       if (id == 'spring') _hasInitialSpring = true;
       if (id == 'magnet') _hasFeverMagnet = true;
       if (id == 'life') _hasExtraLife = true;
-      if (id == 'passive_magnet') {
-        _hasImprovedMagnet = true;
-        prefs.setBool('zen_passive_magnet_${user.uid}', true);
-      }
-      if (id == 'passive_insurance') {
-        _hasLifeInsurance = true;
-        prefs.setBool('zen_passive_insurance_${user.uid}', true);
-      }
+      if (id == 'passive_magnet') _hasImprovedMagnet = true;
+      if (id == 'passive_insurance') _hasLifeInsurance = true;
     });
 
     await _loadZenProfile();
