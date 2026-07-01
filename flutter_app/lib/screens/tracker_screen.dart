@@ -694,6 +694,8 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                         'assets/images/tracker_logo.png',
                         height: MediaQuery.of(context).size.height * 0.30,
                         fit: BoxFit.contain,
+                        filterQuality: FilterQuality.high,
+                        isAntiAlias: true,
                       ),
                     ),
                     const SizedBox(height: 16),

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
+import '../../models/achievement.dart';
 
 enum CatchItemType { poop, paper, bacteria, soap, goldenPoop, soda, chlorineBomb }
 
@@ -640,6 +641,7 @@ class CacaCatchGame extends StatefulWidget {
   final Function() onUnlockAchievement;
   final int highScore;
   final Function(int) onSaveHighScore;
+  final AchievementCategory? activeBuffCategory;
 
   const CacaCatchGame({
     super.key,
@@ -653,6 +655,7 @@ class CacaCatchGame extends StatefulWidget {
     required this.onUnlockAchievement,
     required this.highScore,
     required this.onSaveHighScore,
+    this.activeBuffCategory,
   });
 
   @override
@@ -793,6 +796,7 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
       _score = 0;
       _level = 1;
       _lives = _hasExtraLifeLocal ? 4 : 3;
+      if (widget.activeBuffCategory == AchievementCategory.games) _lives++;
       _hasExtraLifeLocal = false; // consumido
       
       _catchItems.clear();
@@ -921,11 +925,15 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
         }
       } else {
         final rVal = rand.nextDouble();
+        final bool isCalendarBuff = widget.activeBuffCategory == AchievementCategory.calendar;
+        final double paperThreshold = isCalendarBuff ? 0.70 : 0.65;
+        final double starThreshold = isCalendarBuff ? 0.90 : 0.95;
+
         if (rVal < 0.50) {
           type = CatchItemType.poop;
           icon = widget.equippedSkin;
           color = Colors.brown;
-        } else if (rVal < 0.65) {
+        } else if (rVal < paperThreshold) {
           type = CatchItemType.paper;
           icon = '🧻';
           color = Colors.white;
@@ -941,7 +949,7 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
           type = CatchItemType.soda;
           icon = '⚡';
           color = Colors.cyanAccent;
-        } else if (rVal < 0.95) {
+        } else if (rVal < starThreshold) {
           type = CatchItemType.chlorineBomb;
           icon = '💣';
           color = Colors.redAccent;
@@ -980,6 +988,9 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
 
     // Mover y comprobar colisiones
     double currentSpeed = _isFeverMode ? _catchSpeed * 1.3 : _catchSpeed;
+    if (widget.activeBuffCategory == AchievementCategory.locations) {
+      currentSpeed *= 0.9;
+    }
     for (int i = _catchItems.length - 1; i >= 0; i--) {
       final item = _catchItems[i];
       item.y += currentSpeed * dt * 33.3;
@@ -1024,7 +1035,6 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
             if (_lives <= 0) {
               _isCacaCatchGameOver = true;
               _stopCacaCatch();
-          widget.onGameOver(_score);
             }
           }
         }
@@ -1252,6 +1262,7 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
                     if (_isPausedLocal || _isCacaCatchGameOver) return;
                     setState(() {
                       double multiplier = _isSodaFrenzy ? 1.8 : 1.0;
+                      if (widget.activeBuffCategory == AchievementCategory.stats) multiplier += 0.15;
                       _toiletX = (_toiletX + (details.delta.dx * multiplier) / _gameWidth).clamp(0.08, 0.92);
                     });
                   },
@@ -1311,6 +1322,19 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
                               child: IgnorePointer(
                                 child: Container(color: _flashColor),
                               ),
+                            ),
+                          if (_isCacaCatchGameOver)
+                            InGameOverlay(
+                              showPause: false,
+                              showGameOver: _isCacaCatchGameOver,
+                              title: 'CACA CATCH',
+                              record: widget.highScore,
+                              accentColor: Colors.amberAccent,
+                              onRestart: () {
+                                _startCacaCatch();
+                              },
+                              onExit: () => widget.onGameOver(_score),
+                              onResume: () {},
                             ),
                         ],
                       ),

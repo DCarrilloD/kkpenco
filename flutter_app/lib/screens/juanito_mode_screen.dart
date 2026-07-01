@@ -13,6 +13,7 @@ import 'dart:ui' as ui;
 import 'package:audioplayers/audioplayers.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
+import '../models/achievement.dart';
 
 enum ActiveGame { none, selectMenu, cacaCatch, flappyPoop, toiletJump, poopInvaders, storeMenu }
 
@@ -66,13 +67,24 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
   bool _hasImprovedMagnet = false;
   bool _hasLifeInsurance = false;
   String _selectedGameFilter = 'todos';
+  AchievementCategory? _activeBuffCategory;
 
   @override
   void initState() {
     super.initState();
     _stopwatch = Stopwatch()..start();
-    _stopwatch = Stopwatch()..start();
     
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(() {
+          _elapsedSeconds = _stopwatch.elapsed.inSeconds;
+          final minutes = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
+          final seconds = (_elapsedSeconds % 60).toString().padLeft(2, '0');
+          _timeString = '$minutes:$seconds';
+        });
+      }
+    });
+
     _soundAnimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
@@ -125,6 +137,11 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
           _unlockedSkins = List<String>.from(profile['unlockedSkins'] ?? ['💩']);
           _hasImprovedMagnet = prefs.getBool('zen_passive_magnet_${user.uid}') ?? false;
           _hasLifeInsurance = prefs.getBool('zen_passive_insurance_${user.uid}') ?? false;
+          if (profile['equippedTitle'] != null) {
+            _activeBuffCategory = Achievement.getCategoryByTitle(profile['equippedTitle']);
+          } else {
+            _activeBuffCategory = null;
+          }
         });
       }
     }
@@ -169,8 +186,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
       if (isMinigame) {
         targetSource = _alternateGameTrack
-            ? r"D:\CHROME\.old\Audio\First_Light_on_the_Ridge.mp3"
-            : r"D:\CHROME\.old\Audio\Village_of_Seven_Springs.mp3";
+            ? 'audio/First_Light_on_the_Ridge.mp3'
+            : 'audio/Village_of_Seven_Springs.mp3';
         isLocal = true;
       } else {
         targetSource = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3';
@@ -186,8 +203,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
       await _audioPlayer.setReleaseMode(ReleaseMode.loop);
       await _audioPlayer.setVolume(0.12);
 
-      if (isLocal) {
-        await _audioPlayer.play(DeviceFileSource(targetSource));
+      if (isMinigame) {
+        await _audioPlayer.play(AssetSource(targetSource));
       } else {
         await _audioPlayer.play(UrlSource(targetSource));
       }
@@ -491,12 +508,14 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
             child: CacaCatchGame(
               highScore: _highScoreCacaCatch,
               equippedSkin: _equippedSkin,
-              hasImprovedMagnet: false,
+              hasImprovedMagnet: _hasImprovedMagnet,
               hasInitialSoapShield: _hasInitialSoapShield,
               hasExtraLife: _hasExtraLife,
               hasFeverMagnet: _hasFeverMagnet,
+              activeBuffCategory: _activeBuffCategory,
               onGameOver: (score) => _selectGame(ActiveGame.selectMenu),
               onAddKcoins: (coins) {
+                if (_activeBuffCategory == AchievementCategory.streaks) coins = (coins * 1.25).ceil();
                 final user = _authService.currentUser;
                 if (user != null) _dbService.addKcoins(user.uid, coins);
               },
@@ -510,9 +529,11 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
               highScore: _highScoreFlappyPoop,
               equippedSkin: _equippedSkin,
               hasInitialSoapShield: _hasInitialSoapShield,
-              hasLifeInsurance: false,
+              hasLifeInsurance: _hasLifeInsurance,
+              activeBuffCategory: _activeBuffCategory,
               onGameOver: (score) => _selectGame(ActiveGame.selectMenu),
               onAddKcoins: (coins) {
+                if (_activeBuffCategory == AchievementCategory.streaks) coins = (coins * 1.25).ceil();
                 final user = _authService.currentUser;
                 if (user != null) _dbService.addKcoins(user.uid, coins);
               },
@@ -524,6 +545,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
           return RepaintBoundary(
             child: ToiletJumpGame(
               equippedSkin: _equippedSkin,
+              activeBuffCategory: _activeBuffCategory,
               onGameOver: (score, coins) => _selectGame(ActiveGame.selectMenu),
             ),
           );
@@ -534,8 +556,10 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
               equippedSkin: _equippedSkin,
               hasTripleShot: false,
               hasBurstShot: false,
+              activeBuffCategory: _activeBuffCategory,
               onGameOver: (score) => _selectGame(ActiveGame.selectMenu),
               onAddKcoins: (coins) {
+                if (_activeBuffCategory == AchievementCategory.streaks) coins = (coins * 1.25).ceil();
                 final user = _authService.currentUser;
                 if (user != null) _dbService.addKcoins(user.uid, coins);
               },
@@ -550,106 +574,84 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
   // --- AREA ZEN / SONIDOS ---
   Widget _buildZenSoundsArea() {
     return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // Onda de Sonido Visual Animada
-        Expanded(
-          child: Center(
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.lightImpact();
-                _toggleMusic(!_isMusicEnabled);
-              },
-              child: Container(
-                width: 130,
-                height: 130,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.brown[900]!.withAlpha(38),
-                  border: Border.all(
-                    color: _isMusicEnabled ? Colors.amberAccent : Colors.brown[900]!,
-                    width: 2,
-                  ),
-                ),
-                child: Center(
-                  child: AnimatedBuilder(
-                    animation: _soundAnimController,
-                    builder: (context, child) {
-                      final val = _isMusicEnabled ? _soundAnimController.value : 0.0;
-                      return Icon(
-                        _isMusicEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
-                        color: _isMusicEnabled ? Colors.amberAccent : Colors.grey[600],
-                        size: 40 + (val * 10),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Toca el círculo para pausar o reproducir la música',
-          style: TextStyle(color: Colors.grey, fontSize: 11),
-        ),
-        const SizedBox(height: 12),
-
-        // Checkbox para activar/desactivar la música
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: const Color(0xFF121212),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _isMusicEnabled ? Colors.amberAccent.withAlpha(76) : Colors.transparent,
-              width: 1,
-            ),
-          ),
-          child: InkWell(
-            onTap: () {
-              _toggleMusic(!_isMusicEnabled);
-            },
-            borderRadius: BorderRadius.circular(16),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Checkbox(
-                  value: _isMusicEnabled,
-                  activeColor: Colors.amberAccent,
-                  checkColor: Colors.black,
-                  onChanged: (bool? val) {
-                    if (val != null) {
-                      _toggleMusic(val);
-                    }
-                  },
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Música de fondo Zen',
-                  style: TextStyle(
-                    color: _isMusicEnabled ? Colors.white : Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Botón para ir al menú
-        OutlinedButton.icon(
+        // Botón principal y grande para Minijuegos
+        ElevatedButton(
           onPressed: () {
             _loadZenProfile();
             _selectGame(ActiveGame.selectMenu);
           },
-          icon: const Icon(Icons.sports_esports_rounded, color: Colors.amberAccent),
-          label: const Text('¿Aburrido? ¡Suite de Minijuegos! 🎮', style: TextStyle(color: Colors.amberAccent)),
-          style: OutlinedButton.styleFrom(
-            side: const BorderSide(color: Colors.amberAccent),
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.amber[700],
+            foregroundColor: Colors.black87,
+            padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 32),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+            elevation: 8,
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sports_esports_rounded, size: 72, color: Colors.black87),
+              SizedBox(height: 16),
+              Text(
+                'SUITE DE MINIJUEGOS',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 1.2),
+              ),
+              SizedBox(height: 4),
+              Text(
+                '¡Juega mientras esperas!',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black54),
+              ),
+            ],
+          ),
+        ),
+        
+        const SizedBox(height: 50),
+
+        // Control secundario y más pequeño de Música Zen
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF121212),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.white10),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  _toggleMusic(!_isMusicEnabled);
+                },
+                child: AnimatedBuilder(
+                  animation: _soundAnimController,
+                  builder: (context, child) {
+                    final val = _isMusicEnabled ? _soundAnimController.value : 0.0;
+                    return Icon(
+                      _isMusicEnabled ? Icons.music_note_rounded : Icons.music_off_rounded,
+                      color: _isMusicEnabled ? Colors.amberAccent : Colors.grey[600],
+                      size: 24 + (val * 4),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text('Música Zen', style: TextStyle(color: Colors.grey, fontSize: 14)),
+              const SizedBox(width: 8),
+              Switch(
+                value: _isMusicEnabled,
+                activeColor: Colors.amberAccent,
+                activeTrackColor: Colors.amberAccent.withAlpha(50),
+                inactiveThumbColor: Colors.grey,
+                inactiveTrackColor: Colors.white10,
+                onChanged: (val) {
+                  HapticFeedback.lightImpact();
+                  _toggleMusic(val);
+                },
+              ),
+            ],
           ),
         ),
       ],

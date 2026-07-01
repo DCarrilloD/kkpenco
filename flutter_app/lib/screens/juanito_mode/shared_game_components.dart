@@ -1050,7 +1050,7 @@ class BossDrawer {
     } else {
       bodyPaint.shader = RadialGradient(
         colors: isRage 
-            ? [Colors.orangeAccent, Colors.red[950]!] 
+            ? [Colors.orangeAccent, Colors.red[900]!] 
             : [Colors.greenAccent[400]!, const Color(0xFF063B12)],
         stops: const [0.15, 1.0],
         center: const Alignment(-0.25, -0.25),

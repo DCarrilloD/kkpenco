@@ -5,6 +5,7 @@ import 'in_game_overlay.dart';
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'shared_game_components.dart';
+import '../../models/achievement.dart';
 
 class FlappyPipe {
   double x;
@@ -298,6 +299,7 @@ class FlappyPoopGame extends StatefulWidget {
   final VoidCallback onUnlockAchievement;
   final int highScore;
   final Function(int) onSaveHighScore;
+  final AchievementCategory? activeBuffCategory;
 
   const FlappyPoopGame({
     Key? key,
@@ -309,6 +311,7 @@ class FlappyPoopGame extends StatefulWidget {
     required this.onUnlockAchievement,
     required this.highScore,
     required this.onSaveHighScore,
+    this.activeBuffCategory,
   }) : super(key: key);
 
   @override
@@ -391,7 +394,7 @@ class _FlappyPoopGameState extends State<FlappyPoopGame> {
     _flappyBgX = 0;
     _particles.clear();
     _floatingTexts.clear();
-    _hasFlappyShield = widget.hasInitialSoapShield || widget.hasLifeInsurance;
+    _hasFlappyShield = widget.hasInitialSoapShield || widget.hasLifeInsurance || widget.activeBuffCategory == AchievementCategory.games;
     _lastTickTime = DateTime.now();
 
     widget.onUnlockAchievement();
@@ -443,7 +446,9 @@ class _FlappyPoopGameState extends State<FlappyPoopGame> {
     }
 
     setState(() {
-      _flappyVelocity += 0.36 * dt * 33.3;
+      double gravity = 0.36;
+      if (widget.activeBuffCategory == AchievementCategory.locations) gravity *= 0.90;
+      _flappyVelocity += gravity * dt * 33.3;
       _flappyY += _flappyVelocity * dt * 33.3;
       _flappyBgX = (_flappyBgX - 0.7 * dt * 33.3) % _gameWidth;
 
@@ -580,14 +585,15 @@ class _FlappyPoopGameState extends State<FlappyPoopGame> {
     setState(() {
       _isFlappyGameOver = true;
     });
-    widget.onGameOver(_score);
   }
 
   void _onFlappyTap() {
     if (_isFlappyGameOver) return;
     HapticFeedback.selectionClick();
     setState(() {
-      _flappyVelocity = -5.8;
+      double jumpForce = -5.8;
+      if (widget.activeBuffCategory == AchievementCategory.stats) jumpForce -= 1.0;
+      _flappyVelocity = jumpForce;
       _spawnParticles(_flappyX, _flappyY + 10, '💨', 3, speed: 2.0);
     });
   }
@@ -642,40 +648,19 @@ class _FlappyPoopGameState extends State<FlappyPoopGame> {
                     ),
                   ),
                 if (_isFlappyGameOver)
-                  Container(
-                    color: Colors.black54,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            '¡CHOF!',
-                            style: TextStyle(
-                              fontSize: 48,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.redAccent,
-                              shadows: [Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2))],
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.refresh, size: 28),
-                            label: const Text('REINTENTAR', style: TextStyle(fontSize: 20)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.deepPurple,
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                startGame();
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
+                  InGameOverlay(
+                    showPause: false,
+                    showGameOver: _isFlappyGameOver,
+                    title: 'FLAPPY POOP',
+                    record: widget.highScore,
+                    accentColor: Colors.deepPurpleAccent,
+                    onRestart: () {
+                      setState(() {
+                        startGame();
+                      });
+                    },
+                    onExit: () => widget.onGameOver(_score),
+                    onResume: () {},
                   ),
               ],
             ),

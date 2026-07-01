@@ -6,15 +6,18 @@ import 'package:flutter/services.dart';
 import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
 import 'in_game_overlay.dart';
+import '../../models/achievement.dart';
 
 class ToiletJumpGame extends StatefulWidget {
   final Function(int score, int coins) onGameOver;
   final String equippedSkin;
+  final AchievementCategory? activeBuffCategory;
 
   const ToiletJumpGame({
     super.key,
     required this.onGameOver,
     required this.equippedSkin,
+    this.activeBuffCategory,
   });
 
   @override
@@ -212,9 +215,9 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
       _cacaScaleX = 1.0;
       _cacaScaleY = 1.0;
       
-      // Aplicar jetpack inicial si se ha comprado
-      _hasJetpack = _hasInitialSoapShield;
-      _jetpackTicksRemaining = _hasInitialSoapShield ? 60 : 0;
+      // Aplicar jetpack inicial si se ha comprado o si tiene la mejora Alma de Arcade
+      _hasJetpack = _hasInitialSoapShield || widget.activeBuffCategory == AchievementCategory.games;
+      _jetpackTicksRemaining = _hasJetpack ? 60 : 0;
       _hasInitialSoapShield = false; // consumido
       
       _hasBalloon = false;
@@ -258,11 +261,12 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
     ItemType item = ItemType.none;
     if (type == PlatformType.normal && targetY < 250) {
       final iVal = rand.nextDouble();
-      if (iVal < 0.10) {
+      final double probMult = widget.activeBuffCategory == AchievementCategory.calendar ? 1.20 : 1.0;
+      if (iVal < 0.10 * probMult) {
         item = ItemType.spring;
-      } else if (iVal < 0.14 && targetY < -100) {
+      } else if (iVal < 0.14 * probMult && targetY < -100) {
         item = ItemType.jetpack;
-      } else if (iVal < 0.22 && targetY < 0) {
+      } else if (iVal < 0.22 * probMult && targetY < 0) {
         item = ItemType.balloon;
       }
     }
@@ -330,7 +334,9 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
         }
       } else {
         // Gravedad normal
-        _jumpVy += 0.32 * dt * 33.3;
+        double gravity = 0.32;
+        if (widget.activeBuffCategory == AchievementCategory.locations) gravity *= 0.90;
+        _jumpVy += gravity * dt * 33.3;
       }
 
       // Trail visual para skins premium en Toilet Jump
@@ -444,12 +450,14 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
               cacaBottom > p.y && 
               cacaBottom < p.y + 15) {
             
+            double jumpMultiplier = widget.activeBuffCategory == AchievementCategory.stats ? 1.10 : 1.0;
+
             if (p.type == PlatformType.fragile) {
               p.broken = true; // Se rompe al tocarla
               _spawnParticles(p.x + p.width / 2, p.y, '🧩', 6, speed: 2.0);
               HapticFeedback.vibrate();
             } else if (p.type == PlatformType.superSpring) {
-              _jumpVy = -16.5; // Salto súper gigante
+              _jumpVy = -16.5 * jumpMultiplier; // Salto súper gigante
               _cacaScaleY = 0.3;
               _cacaScaleX = 1.7;
               _triggerFlash(Colors.redAccent.withAlpha(40), 6);
@@ -458,7 +466,7 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
               _spawnFloatingText(_jumpX, _jumpY - 20, '¡SUPER IMPULSO! 🔥', Colors.redAccent);
               HapticFeedback.heavyImpact();
             } else {
-              _jumpVy = -8.5; // rebote normal
+              _jumpVy = -8.5 * jumpMultiplier; // rebote normal
               _cacaScaleY = 0.6;
               _cacaScaleX = 1.4;
               HapticFeedback.lightImpact();
@@ -467,7 +475,7 @@ class _ToiletJumpGameState extends State<ToiletJumpGame> {
               if (p.item == ItemType.spring && !p.itemUsed) {
                 p.itemUsed = true;
                 p.scaleY = 0.4; // COMPRIMIR RESORTE
-                _jumpVy = -14.5; // súper impulso
+                _jumpVy = -14.5 * jumpMultiplier; // súper impulso
                 _cacaScaleY = 0.4;
                 _cacaScaleX = 1.6;
                 _triggerFlash(Colors.amberAccent.withAlpha(30), 5);

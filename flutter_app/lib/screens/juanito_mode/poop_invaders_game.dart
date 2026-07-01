@@ -3,7 +3,17 @@ import 'dart:math';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
+import '../../models/achievement.dart';
+
+class GameStar {
+  double x;
+  double y;
+  double speed;
+  double size;
+  GameStar({required this.x, required this.y, required this.speed, required this.size});
+}
 
 class InvaderLaser {
   double x;
@@ -49,7 +59,7 @@ class InvaderItem {
   double x;
   double y;
   double vy;
-  String type; // 'triple', 'burst', 'shield'
+  String type; // 'triple', 'burst', 'shield', 'life'
 
   InvaderItem({
     required this.x,
@@ -67,6 +77,7 @@ class PoopInvadersGame extends StatefulWidget {
   final Function(int) onGameOver;
   final Function(int) onAddKcoins;
   final Function(int) onSaveHighScore;
+  final AchievementCategory? activeBuffCategory;
 
   const PoopInvadersGame({
     super.key,
@@ -77,6 +88,7 @@ class PoopInvadersGame extends StatefulWidget {
     required this.onGameOver,
     required this.onAddKcoins,
     required this.onSaveHighScore,
+    this.activeBuffCategory,
   });
 
   @override
@@ -90,6 +102,7 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
   final List<InvaderLaser> _invaderLasers = [];
   final List<InvaderEnemy> _invaderEnemies = [];
   final List<InvaderItem> _invaderItems = [];
+  final List<GameStar> _stars = [];
   Timer? _poopInvadersTimer;
   int _invadersFireCooldown = 0;
   bool _isInvadersGameOver = false;
@@ -97,10 +110,13 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
 
   int _score = 0;
   bool _isPausedLocalLocal = false;
-  int _lives = 3;
+  int _lives = 5;
   int _tripleShotTicks = 0;
   int _burstShotTicks = 0;
   bool _hasShield = false;
+  
+  double _shipTilt = 0.0;
+  double _ufoTimer = 0.0;
 
   double _shakeX = 0.0;
   double _shakeY = 0.0;
@@ -135,7 +151,9 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
     _poopInvadersTimer?.cancel();
     setState(() {
       _score = 0;
-      _lives = 3;
+      _lives = 5;
+      if (widget.activeBuffCategory == AchievementCategory.games) _lives++;
+      _isPausedLocalLocal = false;
       _invadersWave = 1;
       _gameTimeSeconds = 0.0;
       _invadersShipX = 0.5;
@@ -145,12 +163,26 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
       _invaderItems.clear();
       _particles.clear();
       _floatingTexts.clear();
+      _stars.clear();
+      
+      final rand = Random();
+      for (int i = 0; i < 40; i++) {
+        _stars.add(GameStar(
+          x: rand.nextDouble(),
+          y: rand.nextDouble(),
+          speed: 0.1 + rand.nextDouble() * 0.4,
+          size: 0.5 + rand.nextDouble() * 2.0,
+        ));
+      }
+
       _isInvadersGameOver = false;
       _isBossActive = false;
       _nextBossIndex = 1;
       _tripleShotTicks = 0;
       _burstShotTicks = 0;
       _hasShield = false;
+      _shipTilt = 0.0;
+      _ufoTimer = 0.0;
       _lastTickTime = DateTime.now();
       _spawnInvaderWave();
     });
@@ -169,22 +201,21 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
     _triggerShake(6.0, 10);
     _spawnFloatingText(0.5, 0.45, '¡OLEADA $_invadersWave! 👾', Colors.greenAccent, fontSize: 24.0);
 
-    // Spawn de bacterias comunes para la oleada normal
+    // Spawn de bacterias o aliens para la oleada normal
     int cols = 5;
     int rows = 2;
     double speed = 0.008 + _invadersWave * 0.003;
+    bool isAlienWave = _nextBossIndex > 1; // Si ya derrotaste al primer jefe, son Aliens
+
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
-        final visualTypes = ['poop', 'bacteria', 'alien'];
-        String vType = visualTypes[(r * cols + c) % 3];
-
         _invaderEnemies.add(InvaderEnemy(
           x: 0.16 + c * 0.17,
           y: 0.12 + r * 0.12,
           vx: c % 2 == 0 ? speed : -speed,
-          hp: _invadersWave == 1 ? 1 : 2,
+          hp: isAlienWave ? 2 : 1,
           type: (r == 0 && _invadersWave > 1) ? 'fast' : 'normal',
-          visualType: vType,
+          visualType: isAlienWave ? 'alien' : 'bacteria',
         ));
       }
     }
@@ -207,6 +238,9 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
     // Determinar el tipo de Boss
     String bType = 'fire';
     int maxHp = 30 + bossNumber * 10;
+    if (widget.activeBuffCategory == AchievementCategory.social) {
+      maxHp = (maxHp * 0.85).toInt();
+    }
     if (bossNumber == 2) {
       bType = 'electric';
     } else if (bossNumber == 3) {
@@ -312,6 +346,17 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
     // Actualizar tiempo de juego
     setState(() {
       _gameTimeSeconds += dt;
+      _ufoTimer += dt;
+      
+      for (var star in _stars) {
+        star.y += star.speed * dt;
+        if (star.y > 1.0) {
+          star.y = 0.0;
+          star.x = Random().nextDouble();
+        }
+      }
+      
+      _shipTilt *= 0.88; // Decaimiento suave de la inclinación
       
       // Comprobar si corresponde spawnear un Boss
       if (_nextBossIndex - 1 < _bossSpawnTimes.length &&
@@ -350,13 +395,15 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
         _firePlayerLaser();
       }
 
-      // Mover y actualizar láseres
+      // Mover y actualizar Láseres
       for (int i = _invaderLasers.length - 1; i >= 0; i--) {
         final laser = _invaderLasers[i];
-        
-        // Mover láseres (con soporte de vx/vy)
+        double currentVy = laser.vy;
+        if (!laser.fromPlayer && widget.activeBuffCategory == AchievementCategory.locations) {
+          currentVy *= 0.90;
+        }
         laser.x += laser.vx * dt * 33.3;
-        laser.y += laser.vy * dt * 33.3;
+        laser.y += currentVy * dt * 33.3;
 
         // Comportamientos especiales de proyectiles enemigos
         if (!laser.fromPlayer) {
@@ -392,7 +439,6 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
               _spawnParticles(enemy.x, enemy.y, '💥', 3, speed: 2.0);
               
               if (enemy.hp <= 0) {
-                _invaderEnemies.removeAt(j);
                 if (enemy.type == 'boss') {
                   _isBossActive = false;
                   int reward = 500 + (_nextBossIndex - 1) * 100;
@@ -401,8 +447,20 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
                   _spawnFloatingText(enemy.x, enemy.y, '¡JEFE DEFEATED! +$reward 🏆', Colors.greenAccent, fontSize: 18);
                   widget.onAddKcoins(80);
                   
+                  _triggerShake(18.0, 35);
+                  _triggerFlash(Colors.white.withAlpha(200), 15);
+                  
                   // Volver a spawnear bacterias normales tras derrotar al Boss
                   _spawnInvaderWave();
+                } else if (enemy.type == 'ufo') {
+                  int reward = 250;
+                  _score += reward;
+                  widget.onAddKcoins(50);
+                  _spawnParticles(enemy.x, enemy.y, '⭐', 15, speed: 3.5);
+                  _spawnFloatingText(enemy.x, enemy.y, '+$reward 💰', Colors.yellowAccent);
+                  
+                  String pType = ['triple', 'burst', 'shield', 'life'][Random().nextInt(4)];
+                  _invaderItems.add(InvaderItem(x: enemy.x, y: enemy.y, vy: 0.006, type: pType));
                 } else {
                   int reward = 15;
                   _score += reward;
@@ -410,12 +468,15 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
                   _spawnFloatingText(enemy.x, enemy.y, '+$reward 💀', Colors.greenAccent);
                 }
                 
+                _invaderEnemies.removeAt(j);
+                
                 widget.onSaveHighScore(_score);
 
                 // Soltar powerup con probabilidad
                 final rand = Random();
-                if (enemy.type == 'boss' || rand.nextDouble() < 0.28) {
-                  String pType = ['triple', 'burst', 'shield'][rand.nextInt(3)];
+                double dropChance = widget.activeBuffCategory == AchievementCategory.calendar ? 0.38 : 0.28;
+                if (enemy.type == 'boss' || (enemy.type != 'ufo' && rand.nextDouble() < dropChance)) {
+                  String pType = ['triple', 'burst', 'shield', 'life'][rand.nextInt(4)];
                   _invaderItems.add(InvaderItem(
                     x: enemy.x,
                     y: enemy.y,
@@ -457,7 +518,6 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
               if (_lives <= 0) {
                 _isInvadersGameOver = true;
                 _poopInvadersTimer?.cancel();
-                widget.onGameOver(_score);
               }
             }
           }
@@ -489,6 +549,9 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
           } else if (item.type == 'burst') {
             _burstShotTicks = 200; // ~6 segundos
             _spawnFloatingText(_invadersShipX, _invadersShipY - 0.06, '¡DISPARO RÁPIDO! ⚡', Colors.cyanAccent);
+          } else if (item.type == 'life') {
+            _lives = (_lives + 1).clamp(0, 5);
+            _spawnFloatingText(_invadersShipX, _invadersShipY - 0.06, '+1 VIDA 💖', Colors.redAccent);
           } else {
             _hasShield = true;
             _spawnFloatingText(_invadersShipX, _invadersShipY - 0.06, '¡ESCUDO ACTIVADO! 🧼', Colors.blueAccent);
@@ -498,13 +561,65 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
 
       // Mover enemigos y disparar ataques
       final rand = Random();
-      bool borderHit = false;
 
-      for (var enemy in _invaderEnemies) {
-        enemy.x += enemy.vx * dt * 33.3;
+      for (int i = _invaderEnemies.length - 1; i >= 0; i--) {
+        var enemy = _invaderEnemies[i];
+        enemy.time += dt;
 
-        if (enemy.x < 0.08 || enemy.x > 0.92) {
-          borderHit = true;
+        if (enemy.visualType == 'alien' && enemy.type != 'boss') {
+          enemy.x += enemy.vx * dt * 33.3 + sin(enemy.time * 5.0) * 0.005;
+        } else {
+          enemy.x += enemy.vx * dt * 33.3;
+        }
+
+        if (enemy.type == 'ufo') {
+          if (enemy.x > 1.2) {
+            _invaderEnemies.removeAt(i);
+            continue;
+          }
+        } else if (enemy.x < 0.08 || enemy.x > 0.92) {
+          enemy.vx = -enemy.vx;
+          if (enemy.type != 'boss') {
+            enemy.y += 0.04;
+          }
+          enemy.x = enemy.x.clamp(0.08, 0.92);
+        }
+
+        // Colisión física entre la nave y el enemigo
+        double collisionRadius = enemy.type == 'boss' ? 0.14 : 0.08;
+        bool hitX = (enemy.x - _invadersShipX).abs() < collisionRadius;
+        bool hitY = (enemy.y - _invadersShipY).abs() < collisionRadius;
+
+        if (hitX && hitY) {
+          if (_hasShield) {
+            _hasShield = false;
+            _triggerFlash(Colors.blueAccent.withAlpha(90), 8);
+            _triggerShake(4.0, 10);
+            _spawnParticles(_invadersShipX, _invadersShipY, '🫧', 10);
+            _spawnFloatingText(_invadersShipX, _invadersShipY - 0.05, '¡ESCUDO ROTO! 🫧', Colors.blueAccent);
+            HapticFeedback.heavyImpact();
+          } else {
+            _lives--;
+            _triggerFlash(Colors.red.withAlpha(120), 10);
+            _triggerShake(8.0, 15);
+            _spawnParticles(_invadersShipX, _invadersShipY, '💔', 12);
+            _spawnFloatingText(_invadersShipX, _invadersShipY - 0.05, '💔 -1 Vida', Colors.redAccent);
+            HapticFeedback.vibrate();
+            if (_lives <= 0) {
+              _isInvadersGameOver = true;
+              _poopInvadersTimer?.cancel();
+              return;
+            }
+          }
+
+          if (enemy.type != 'boss') {
+            _invaderEnemies.removeAt(i);
+            _spawnParticles(enemy.x, enemy.y, '💥', 8);
+            continue; // El enemigo normal se destruye al chocar
+          } else {
+            // El jefe retrocede un poco para no absorber todas las vidas del jugador instantáneamente
+            enemy.y -= 0.15;
+          }
         }
 
         // Lógica de ataques de los enemigos comunes
@@ -517,7 +632,6 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
           if (enemy.y >= 0.84) {
             _isInvadersGameOver = true;
             _poopInvadersTimer?.cancel();
-            widget.onGameOver(_score);
             return;
           }
         }
@@ -575,13 +689,19 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
         }
       }
 
-      if (borderHit) {
-        for (var enemy in _invaderEnemies) {
-          enemy.vx = -enemy.vx;
-          if (enemy.type != 'boss') {
-            enemy.y += 0.04;
-          }
+      // Spawn OVNI dorado ocasional
+      if (_ufoTimer > 25.0) {
+        if (rand.nextDouble() < 0.4 && !_isBossActive) {
+          _invaderEnemies.add(InvaderEnemy(
+            x: -0.1,
+            y: 0.06,
+            vx: 0.016,
+            hp: 3,
+            type: 'ufo',
+          ));
+          _spawnFloatingText(0.5, 0.1, '🛸 ¡OVNI DEL BOTÍN!', Colors.yellowAccent);
         }
+        _ufoTimer = 0.0;
       }
 
       // Comprobar si se eliminaron bacterias de la oleada normal (sólo si el Boss no está activo)
@@ -613,8 +733,11 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
             onPanUpdate: (details) {
               if (_isPausedLocalLocal || _isInvadersGameOver) return;
               setState(() {
-                _invadersShipX = (_invadersShipX + details.delta.dx / _gameWidth).clamp(0.08, 0.92);
-                _invadersShipY = (_invadersShipY + details.delta.dy / _gameHeight).clamp(0.15, 0.92);
+                double speedMultiplier = widget.activeBuffCategory == AchievementCategory.stats ? 1.25 : 1.0;
+                double deltaX = (details.delta.dx * speedMultiplier) / _gameWidth;
+                _invadersShipX = (_invadersShipX + deltaX).clamp(0.08, 0.92);
+                _invadersShipY = (_invadersShipY + (details.delta.dy * speedMultiplier) / _gameHeight).clamp(0.15, 0.92);
+                _shipTilt = (_shipTilt + deltaX * 12.0).clamp(-0.5, 0.5);
               });
             },
             child: Container(
@@ -633,11 +756,13 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
                         painter: PoopInvadersPainter(
                           shipX: _invadersShipX,
                           shipY: _invadersShipY,
+                          shipTilt: _shipTilt,
                           lasers: _invaderLasers,
                           enemies: _invaderEnemies,
                           items: _invaderItems,
                           particles: _particles,
                           floatingTexts: _floatingTexts,
+                          stars: _stars,
                           width: _gameWidth,
                           height: _gameHeight,
                           equippedSkin: widget.equippedSkin,
@@ -656,36 +781,15 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
                         ),
                       ),
                     if (_isInvadersGameOver)
-                      Container(
-                        color: Colors.black54,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                '¡CHOF!',
-                                style: TextStyle(
-                                  fontSize: 48,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.redAccent,
-                                  shadows: [Shadow(color: Colors.black, blurRadius: 10, offset: Offset(2, 2))],
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              ElevatedButton.icon(
-                                icon: const Icon(Icons.refresh, size: 28),
-                                label: const Text('REINTENTAR', style: TextStyle(fontSize: 20)),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.white,
-                                  foregroundColor: Colors.deepPurple,
-                                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                                ),
-                                onPressed: _startPoopInvaders,
-                              ),
-                            ],
-                          ),
-                        ),
+                      InGameOverlay(
+                        showPause: false,
+                        showGameOver: _isInvadersGameOver,
+                        title: 'POOP INVADERS',
+                        record: widget.highScore,
+                        accentColor: Colors.greenAccent,
+                        onRestart: _startPoopInvaders,
+                        onExit: () => widget.onGameOver(_score),
+                        onResume: () {},
                       ),
                   ],
                 ),
@@ -701,11 +805,13 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
 class PoopInvadersPainter extends CustomPainter {
   final double shipX;
   final double shipY;
+  final double shipTilt;
   final List<InvaderLaser> lasers;
   final List<InvaderEnemy> enemies;
   final List<InvaderItem> items;
   final List<GameParticle> particles;
   final List<FloatingText> floatingTexts;
+  final List<GameStar> stars;
   final double width;
   final double height;
   final String equippedSkin;
@@ -718,11 +824,13 @@ class PoopInvadersPainter extends CustomPainter {
   PoopInvadersPainter({
     required this.shipX,
     required this.shipY,
+    required this.shipTilt,
     required this.lasers,
     required this.enemies,
     required this.items,
     required this.particles,
     required this.floatingTexts,
+    required this.stars,
     required this.width,
     required this.height,
     required this.equippedSkin,
@@ -742,6 +850,7 @@ class PoopInvadersPainter extends CustomPainter {
         Offset(center.dx - half, center.dy),
         Offset(center.dx + half, center.dy),
         [const Color(0xFF334155), const Color(0xFF64748B), const Color(0xFF334155)],
+        [0.0, 0.5, 1.0],
       );
     
     final wingPath = Path()
@@ -799,6 +908,7 @@ class PoopInvadersPainter extends CustomPainter {
         Offset(center.dx - 6, center.dy + 2),
         half * 0.95,
         [Colors.white, const Color(0xFFE2E8F0), const Color(0xFFCBD5E1)],
+        [0.0, 0.5, 1.0],
       );
     final Path bowlPath = Path()
       ..moveTo(center.dx - half * 0.65, center.dy - half * 0.1)
@@ -831,8 +941,27 @@ class PoopInvadersPainter extends CustomPainter {
     canvas.drawOval(innerRect, innerPaint);
   }
 
-  void _drawBacteriaVector(Canvas canvas, Offset center, double size, {String type = 'normal', String bossType = 'none', String visualType = 'poop'}) {
+  void _drawBacteriaVector(Canvas canvas, Offset center, double size, {String type = 'normal', String bossType = 'none', String visualType = 'poop', int hp = 1, int maxHp = 1}) {
     final double half = size / 2;
+    
+    if (type == 'ufo') {
+      final goldPaint = Paint()
+        ..shader = ui.Gradient.linear(
+          Offset(center.dx - half, center.dy - half),
+          Offset(center.dx + half, center.dy + half),
+          [Colors.yellow, Colors.orangeAccent, Colors.yellowAccent],
+          [0.0, 0.5, 1.0],
+        );
+      final ufoPath = Path()
+        ..moveTo(center.dx - half * 1.5, center.dy)
+        ..quadraticBezierTo(center.dx, center.dy - half, center.dx + half * 1.5, center.dy)
+        ..quadraticBezierTo(center.dx, center.dy + half * 0.8, center.dx - half * 1.5, center.dy);
+      canvas.drawPath(ufoPath, goldPaint);
+      canvas.drawPath(ufoPath, Paint()..color = Colors.white24..style = PaintingStyle.stroke..strokeWidth = 2);
+      canvas.drawCircle(Offset(center.dx, center.dy - half * 0.4), half * 0.6, Paint()..color = Colors.cyanAccent.withAlpha(150));
+      return;
+    }
+    
     Color color1 = Colors.brown[400]!;
     Color color2 = Colors.brown[800]!;
     
@@ -863,6 +992,7 @@ class PoopInvadersPainter extends CustomPainter {
           center,
           half * 1.5,
           [Colors.yellow, Colors.orangeAccent, Colors.redAccent, Colors.transparent],
+          [0.0, 0.33, 0.66, 1.0],
         );
       final flamePath = Path()
         ..moveTo(center.dx - half * 0.9, center.dy)
@@ -964,7 +1094,7 @@ class PoopInvadersPainter extends CustomPainter {
     } else if (visualType == 'bacteria') {
       // 2. BACTERIA ESPACIAL (Morada neón, cilios de bolitas y núcleo 3D)
       final bacColor1 = Colors.purpleAccent;
-      final bacColor2 = Colors.purple[950]!;
+      final bacColor2 = Colors.purple[900]!;
       
       // Dibujar cilios circulares perfectos a su alrededor
       final cilioPaint = Paint()..color = Colors.purpleAccent.withAlpha(200);
@@ -997,9 +1127,9 @@ class PoopInvadersPainter extends CustomPainter {
       canvas.drawCircle(Offset(center.dx - half * 0.35, center.dy - half * 0.2), 3, eyePaint);
       canvas.drawCircle(Offset(center.dx + half * 0.35, center.dy - half * 0.2), 3, eyePaint);
     } else if (visualType == 'alien') {
-      // 3. ENEMY ALIEN (Verde neón Roswell de alta calidad simétrica)
-      final aliColor1 = Colors.greenAccent[400]!;
-      final aliColor2 = Colors.green[950]!;
+      // 3. ALIENÍGENA CLÁSICO (Verde fosforito o Naranja si está dañado)
+      final aliColor1 = (hp < maxHp) ? Colors.orangeAccent : Colors.greenAccent[400]!;
+      final aliColor2 = (hp < maxHp) ? Colors.red[900]! : Colors.green[900]!;
 
       final headPaint = Paint()
         ..shader = ui.Gradient.radial(
@@ -1067,13 +1197,9 @@ class PoopInvadersPainter extends CustomPainter {
     final bgPaint = Paint()..color = const Color(0xFF030712);
     canvas.drawRect(Rect.fromLTWH(0, 0, width, height), bgPaint);
 
-    final starsRand = Random(42);
-    for (int i = 0; i < 30; i++) {
-      double sx = starsRand.nextDouble() * width;
-      double sy = (starsRand.nextDouble() * height + (DateTime.now().millisecondsSinceEpoch * 0.02)) % height;
-      double r = 0.5 + starsRand.nextDouble() * 1.5;
-      final starPaint = Paint()..color = Colors.white.withAlpha(140);
-      canvas.drawCircle(Offset(sx, sy), r, starPaint);
+    for (var star in stars) {
+      final starPaint = Paint()..color = Colors.white.withAlpha((150 * (star.size/2.5)).clamp(40, 255).toInt());
+      canvas.drawCircle(Offset(star.x * width, star.y * height), star.size, starPaint);
     }
 
     // Grid neón de fondo
@@ -1121,6 +1247,22 @@ class PoopInvadersPainter extends CustomPainter {
         canvas.drawCircle(lCenter, lWidth / 2 + 2, glowPaint);
         canvas.drawCircle(lCenter, lWidth / 2, Paint()..color = Colors.greenAccent[400]!);
       } else {
+        // Trail para láseres normales
+        final trailPaint = Paint()
+          ..shader = ui.Gradient.linear(
+            Offset(lCenter.dx, lCenter.dy - lHeight / 2),
+            Offset(lCenter.dx, lCenter.dy + lHeight * 2.0 * (laser.fromPlayer ? 1 : -1)),
+            [laserColor.withAlpha(180), laserColor.withAlpha(0)],
+          );
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(lCenter.dx, lCenter.dy + lHeight * 0.8 * (laser.fromPlayer ? 1 : -1)),
+            width: lWidth * 0.6,
+            height: lHeight * 2.0,
+          ),
+          trailPaint,
+        );
+
         canvas.drawOval(Rect.fromCenter(center: lCenter, width: lWidth, height: lHeight), glowPaint);
         canvas.drawOval(Rect.fromCenter(center: lCenter, width: lWidth / 2, height: lHeight * 0.75), Paint()..color = Colors.white);
       }
@@ -1129,8 +1271,8 @@ class PoopInvadersPainter extends CustomPainter {
     // 3. Dibujar enemigos
     for (var enemy in enemies) {
       final eCenter = Offset(enemy.x * width, enemy.y * height);
-      double size = enemy.type == 'boss' ? 54.0 : 22.0;
-      _drawBacteriaVector(canvas, eCenter, size, type: enemy.type, bossType: enemy.bossType, visualType: enemy.visualType);
+      double size = enemy.type == 'boss' ? 54.0 : (enemy.type == 'ufo' ? 40.0 : 22.0);
+      _drawBacteriaVector(canvas, eCenter, size, type: enemy.type, bossType: enemy.bossType, visualType: enemy.visualType, hp: enemy.hp, maxHp: enemy.maxHp);
 
       // Si es Jefe, dibujar su barra de vida encima
       if (enemy.type == 'boss') {
@@ -1159,6 +1301,9 @@ class PoopInvadersPainter extends CustomPainter {
       } else if (item.type == 'shield') {
         itemColor = Colors.blue;
         emoji = '🧼';
+      } else if (item.type == 'life') {
+        itemColor = Colors.redAccent;
+        emoji = '💖';
       }
 
       final glow = Paint()
@@ -1188,11 +1333,18 @@ class PoopInvadersPainter extends CustomPainter {
       canvas.drawCircle(sCenter, 44, borderPaint);
     }
 
-    // Dibujar inodoro
+    // Dibujar inodoro con rotación relativa
+    canvas.save();
+    canvas.translate(sCenter.dx, sCenter.dy);
+    canvas.rotate(shipTilt);
+    canvas.translate(-sCenter.dx, -sCenter.dy);
+
     _drawToiletVector(canvas, sCenter, 60);
 
     // Dibujar la caca equipada asomando por la taza
     PoopSkinDrawer.drawPoop(canvas, Offset(sCenter.dx, sCenter.dy - 11), 32, skin: equippedSkin);
+    
+    canvas.restore();
 
     // 6. Dibujar partículas
     for (var particle in particles) {

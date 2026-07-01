@@ -1015,10 +1015,12 @@ class DatabaseService {
       final kcoins = prefs.getInt('zen_kcoins_$userId') ?? 50; // Inicia con 50 de regalo en mock
       final equippedSkin = prefs.getString('zen_equipped_skin_$userId') ?? '💩';
       final unlockedSkins = prefs.getStringList('zen_unlocked_skins_$userId') ?? ['💩'];
+      final equippedTitle = prefs.getString('equipped_title_$userId');
       return {
         'kcoins': kcoins,
         'equippedSkin': equippedSkin,
         'unlockedSkins': unlockedSkins,
+        'equippedTitle': equippedTitle,
       };
     }
     
@@ -1029,12 +1031,14 @@ class DatabaseService {
         'kcoins': data?['kcoins'] ?? 0,
         'equippedSkin': data?['equippedSkin'] ?? '💩',
         'unlockedSkins': List<String>.from(data?['unlockedSkins'] ?? ['💩']),
+        'equippedTitle': data?['equippedTitle'],
       };
     }
     return {
       'kcoins': 0,
       'equippedSkin': '💩',
       'unlockedSkins': ['💩'],
+      'equippedTitle': null,
     };
   }
 
