@@ -1,5 +1,16 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:flame_audio/flame_audio.dart';
+import '../juanito_mode_screen.dart';
+
+class GameAudio {
+  static void play(String file, {double volume = 1.0}) {
+    if (JuanitoModeScreen.isMuted) return;
+    // Si queremos reducir el volumen de Poop Invaders de forma nativa:
+    final double volMultiplier = (file == 'shoot.wav' || file == 'explosion.wav') ? 0.35 : 1.0;
+    FlameAudio.play(file, volume: volume * volMultiplier);
+  }
+}
 
 class GameParticle {
   double x;

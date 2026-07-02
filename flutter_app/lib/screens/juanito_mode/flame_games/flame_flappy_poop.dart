@@ -6,7 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show PoopSkinDrawer;
+import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -99,7 +99,7 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   void onTapDown(TapDownEvent event) {
     if (!paused) {
       player.jump();
-      FlameAudio.play('jump.wav', volume: 0.5);
+      GameAudio.play('jump.wav', volume: 0.5);
     }
   }
 
@@ -259,7 +259,7 @@ class PoopPlayer extends PositionComponent with HasGameReference<FlappyPoopFlame
   void breakShield() {
     hasShield = false;
     game.addFloatingText("¡ESCUDO ROTO!", position.clone()..sub(Vector2(0, 20)), Colors.blue);
-    FlameAudio.play('hit.wav', volume: 0.8);
+    GameAudio.play('hit.wav', volume: 0.8);
     velocityY = 0; // Estabiliza un poco el golpe
   }
 }

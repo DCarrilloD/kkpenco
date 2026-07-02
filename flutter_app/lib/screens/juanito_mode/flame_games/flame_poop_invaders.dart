@@ -7,7 +7,7 @@ import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show PoopSkinDrawer;
+import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -381,7 +381,7 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
     } else {
       game.spawnLaser(pos: position.clone() + Vector2(0, -25), vy: lSpeed, vx: 0, fromPlayer: true);
     }
-    FlameAudio.play('shoot.wav', volume: 0.06);
+    GameAudio.play('shoot.wav', volume: 0.06);
   }
 
   @override
@@ -729,7 +729,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
   void die({bool silent = false}) {
     if (!silent) {
-      FlameAudio.play('explosion.wav', volume: 0.12);
+      GameAudio.play('explosion.wav', volume: 0.12);
       if (type == 'boss') {
         game.isBossActive = false;
         int reward = 500 + (game.nextBossIndex - 1) * 100;

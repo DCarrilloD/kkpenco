@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../models/event.dart';
 import '../services/database_service.dart';
+import '../widgets/shimmer_loading.dart';
 
 class StatsPanelScreen extends StatefulWidget {
   const StatsPanelScreen({super.key});
@@ -26,6 +27,13 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
   // Variables de filtrado por año
   String _selectedYear = 'Todos';
   List<String> _availableYears = [];
+
+  // Variables memorizadas para evitar recálculos en el build
+  double _totalWeightGrams = 0.0;
+  double _totalWeightKg = 0.0;
+  double _avgWeight = 0.0;
+  Map<Consistency, int> _consistencyDistribution = {};
+  Map<String, double> _poopsWeightByUser = {};
 
   @override
   void initState() {
@@ -50,6 +58,27 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
       map.putIfAbsent(userId, () => []).add(event);
     }
     return map;
+  }
+
+  void _calculateDerivedStats() {
+    final events = _filteredEvents;
+    _totalWeightGrams = events.fold(0.0, (sum, e) => sum + e.estimatedWeight);
+    _totalWeightKg = _totalWeightGrams / 1000.0;
+    _avgWeight = events.isEmpty ? 0.0 : _totalWeightGrams / events.length;
+
+    // Distribución de consistencia
+    final Map<Consistency, int> consistencyDistribution = {};
+    for (var e in events) {
+      consistencyDistribution[e.consistency] = (consistencyDistribution[e.consistency] ?? 0) + 1;
+    }
+    _consistencyDistribution = consistencyDistribution;
+
+    // Rankings de usuarios
+    final Map<String, double> poopsWeightByUser = {};
+    for (var e in events) {
+      poopsWeightByUser[e.userId] = (poopsWeightByUser[e.userId] ?? 0.0) + e.estimatedWeight;
+    }
+    _poopsWeightByUser = poopsWeightByUser;
   }
 
   Future<void> _loadData() async {
@@ -93,6 +122,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
           _selectedUserId = filteredMap.keys.first;
         }
 
+        _calculateDerivedStats();
         _isLoading = false;
       });
     } catch (e) {
@@ -115,6 +145,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
       } else {
         _selectedUserId = null;
       }
+      _calculateDerivedStats();
     });
   }
 
@@ -784,7 +815,27 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Colors.brown))
+          ? SingleChildScrollView(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const ShimmerLoading(width: double.infinity, height: 180, borderRadius: 20),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: const [
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 120, borderRadius: 16)),
+                      SizedBox(width: 12),
+                      Expanded(child: ShimmerLoading(width: double.infinity, height: 120, borderRadius: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  const ShimmerLoading(width: double.infinity, height: 260, borderRadius: 16),
+                  const SizedBox(height: 20),
+                  const ShimmerLoading(width: double.infinity, height: 200, borderRadius: 16),
+                ],
+              ),
+            )
           : _errorMessage != null
               ? Center(
                   child: Padding(
@@ -833,9 +884,8 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
   }
 
   Widget _buildOverallStatsCard() {
-    final totalWeightGrams = _filteredEvents.fold(0.0, (sum, e) => sum + e.estimatedWeight);
-    final totalWeightKg = totalWeightGrams / 1000.0;
-    final avgWeight = _filteredEvents.isEmpty ? 0.0 : totalWeightGrams / _filteredEvents.length;
+    final totalWeightKg = _totalWeightKg;
+    final avgWeight = _avgWeight;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -1105,16 +1155,11 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
   }
 
   Widget _buildConsistencyChart() {
-    final Map<Consistency, int> counts = {};
-    for (var e in _filteredEvents) {
-      counts[e.consistency] = (counts[e.consistency] ?? 0) + 1;
-    }
-
     final total = _filteredEvents.length;
-    final normalCount = counts[Consistency.normal] ?? 0;
-    final jurasicaCount = counts[Consistency.jurasica] ?? 0;
-    final espurruteoCount = counts[Consistency.espurruteo] ?? 0;
-    final cabraCount = counts[Consistency.cabra] ?? 0;
+    final normalCount = _consistencyDistribution[Consistency.normal] ?? 0;
+    final jurasicaCount = _consistencyDistribution[Consistency.jurasica] ?? 0;
+    final espurruteoCount = _consistencyDistribution[Consistency.espurruteo] ?? 0;
+    final cabraCount = _consistencyDistribution[Consistency.cabra] ?? 0;
 
     final normalPct = total == 0 ? 0.0 : normalCount / total;
     final jurasicaPct = total == 0 ? 0.0 : jurasicaCount / total;
@@ -1258,7 +1303,7 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
               final entry = sortedUsers[index];
               final username = _userNamesMap[entry.key] ?? 'Usuario Desconocido';
               final count = entry.value.length;
-              final totalWeight = entry.value.fold(0.0, (sum, e) => sum + e.estimatedWeight) / 1000.0;
+              final totalWeight = (_poopsWeightByUser[entry.key] ?? 0.0) / 1000.0;
 
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8.0),

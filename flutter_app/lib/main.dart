@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -201,6 +200,7 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  int _previousIndex = 0;
 
   final List<Widget> _screens = const [
     TrackerScreen(),
@@ -220,6 +220,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       child: GestureDetector(
         onTap: () {
           setState(() {
+            _previousIndex = _currentIndex;
             _currentIndex = index;
           });
         },
@@ -261,7 +262,62 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 320),
+        reverseDuration: const Duration(milliseconds: 320),
+        switchInCurve: Curves.easeInOutCubic,
+        switchOutCurve: Curves.easeInOutCubic,
+        layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
+          return Stack(
+            children: <Widget>[
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          );
+        },
+        transitionBuilder: (Widget child, Animation<double> animation) {
+          final isEntering = child.key == ValueKey<int>(_currentIndex);
+          final direction = _currentIndex >= _previousIndex ? 1.0 : -1.0;
+          
+          // Escala premium sutil tridimensional (Zoom 3D refinado del 3%)
+          final double beginScale = isEntering 
+              ? (direction > 0 ? 1.03 : 0.97) 
+              : 1.0;
+          final double endScale = isEntering 
+              ? 1.0 
+              : (direction > 0 ? 0.97 : 1.03);
+
+          // Curva personalizada desacoplada para la escala (entrada suave, salida limpia)
+          final scaleAnimation = Tween<double>(
+            begin: beginScale,
+            end: endScale,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: isEntering ? Curves.easeOutCubic : Curves.easeInCubic,
+          ));
+
+          // Curva de opacidad rápida para evitar superposición densa de pantallas
+          final fadeAnimation = Tween<double>(
+            begin: isEntering ? 0.0 : 1.0,
+            end: isEntering ? 1.0 : 0.0,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: isEntering ? Curves.easeOut : Curves.easeIn,
+          ));
+          
+          return ScaleTransition(
+            scale: scaleAnimation,
+            child: FadeTransition(
+              opacity: fadeAnimation,
+              child: child,
+            ),
+          );
+        },
+        child: KeyedSubtree(
+          key: ValueKey<int>(_currentIndex),
+          child: _screens[_currentIndex],
+        ),
+      ),
       bottomNavigationBar: Container(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).padding.bottom + 12,

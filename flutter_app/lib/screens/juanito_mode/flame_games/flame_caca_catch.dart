@@ -7,6 +7,7 @@ import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flame_audio/flame_audio.dart';
+import '../shared_game_components.dart' show GameAudio;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -157,14 +158,14 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
       if (toilet.hasShield) {
         toilet.hasShield = false;
         addFloatingText("¡Escudo Roto!", item.position, Colors.blue);
-        FlameAudio.play('hit.wav', volume: 0.8);
+        GameAudio.play('hit.wav', volume: 0.8);
       } else {
         lives--;
         poopsCaughtConsecutively = 0;
         comboMultiplier = 1;
         onLivesChanged(lives);
         addFloatingText("¡Daño!", item.position, Colors.red);
-        FlameAudio.play('hit.wav', volume: 0.8);
+        GameAudio.play('hit.wav', volume: 0.8);
         HapticFeedback.heavyImpact();
         
         if (lives <= 0) {
@@ -184,7 +185,7 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
         addFloatingText("¡Frenesí!", item.position, Colors.cyan);
       }
 
-      FlameAudio.play('coin.wav', volume: 0.6);
+      GameAudio.play('coin.wav', volume: 0.6);
 
       score += points * comboMultiplier;
       onScoreChanged(score);

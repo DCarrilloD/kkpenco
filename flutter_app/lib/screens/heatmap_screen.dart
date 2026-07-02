@@ -120,13 +120,34 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     final Map<String, List<KKEvent>> countryGroups = {};
     final Map<String, String> countryNames = {};
 
+    // Agrupar previamente por lat/lon aproximada (2 decimales ~1.1km)
+    // para evitar hacer múltiples llamadas HTTP duplicadas a Nominatim por ubicaciones cercanas
+    final Map<String, LatLng> uniqueZones = {};
     for (var event in geoEvents) {
-      final res = await _reverseGeocode(event.latitude!, event.longitude!);
-      if (res != null) {
-        final code = res['code']!;
-        final name = res['name']!;
-        countryNames[code] = name;
-        countryGroups.putIfAbsent(code, () => []).add(event);
+      if (event.latitude != null && event.longitude != null) {
+        final zoneKey = '${event.latitude!.toStringAsFixed(2)}_${event.longitude!.toStringAsFixed(2)}';
+        uniqueZones[zoneKey] = LatLng(event.latitude!, event.longitude!);
+      }
+    }
+
+    // Geocodificar solo las zonas geográficas únicas
+    final Map<String, Map<String, String>?> geocodedZones = {};
+    for (var entry in uniqueZones.entries) {
+      final res = await _reverseGeocode(entry.value.latitude, entry.value.longitude);
+      geocodedZones[entry.key] = res;
+    }
+
+    // Distribuir la respuesta de país a todos los eventos según su zona
+    for (var event in geoEvents) {
+      if (event.latitude != null && event.longitude != null) {
+        final zoneKey = '${event.latitude!.toStringAsFixed(2)}_${event.longitude!.toStringAsFixed(2)}';
+        final res = geocodedZones[zoneKey];
+        if (res != null) {
+          final code = res['code']!;
+          final name = res['name']!;
+          countryNames[code] = name;
+          countryGroups.putIfAbsent(code, () => []).add(event);
+        }
       }
     }
 

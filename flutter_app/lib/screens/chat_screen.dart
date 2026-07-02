@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/chat_message.dart';
@@ -355,18 +357,52 @@ class _ChatScreenState extends State<ChatScreen> {
                               ] else if (msg.type == 'image' && msg.metadata != null && msg.metadata!['imagePath'] != null) ...[
                                 ClipRRect(
                                   borderRadius: BorderRadius.circular(12),
-                                  child: Image.file(
-                                    File(msg.metadata!['imagePath']!),
-                                    width: 180,
-                                    height: 180,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: 180,
-                                        height: 180,
-                                        color: Colors.grey[800],
-                                        child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
-                                      );
+                                  child: Builder(
+                                    builder: (context) {
+                                      final path = msg.metadata!['imagePath']!;
+                                      final isRemote = path.startsWith('http://') || path.startsWith('https://');
+                                      
+                                      if (isRemote) {
+                                        return CachedNetworkImage(
+                                          imageUrl: path,
+                                          width: 180,
+                                          height: 180,
+                                          fit: BoxFit.cover,
+                                          placeholder: (context, url) => Container(
+                                            width: 180,
+                                            height: 180,
+                                            color: const Color(0xFF1F1F1F),
+                                            child: const Center(
+                                              child: SizedBox(
+                                                width: 24,
+                                                height: 24,
+                                                child: CircularProgressIndicator(strokeWidth: 2.0, color: Colors.brown),
+                                              ),
+                                            ),
+                                          ),
+                                          errorWidget: (context, url, error) => Container(
+                                            width: 180,
+                                            height: 180,
+                                            color: Colors.grey[800],
+                                            child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                                          ),
+                                        );
+                                      } else {
+                                        return Image.file(
+                                          File(path),
+                                          width: 180,
+                                          height: 180,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (context, error, stackTrace) {
+                                            return Container(
+                                              width: 180,
+                                              height: 180,
+                                              color: Colors.grey[800],
+                                              child: const Icon(Icons.broken_image_rounded, color: Colors.grey),
+                                            );
+                                          },
+                                        );
+                                      }
                                     },
                                   ),
                                 ),
@@ -448,23 +484,7 @@ class _ChatScreenState extends State<ChatScreen> {
               if (typingMap.isEmpty) return const SizedBox.shrink();
 
               final names = typingMap.values.join(', ');
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6.0),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.grey),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$names está escribiendo...',
-                      style: const TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic),
-                    ),
-                  ],
-                ),
-              );
+              return _TypingBubble(names: names);
             },
           ),
 
@@ -571,6 +591,88 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: const TextStyle(color: Colors.white70, fontSize: 11),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TypingBubble extends StatefulWidget {
+  final String names;
+  const _TypingBubble({required this.names});
+
+  @override
+  State<_TypingBubble> createState() => _TypingBubbleState();
+}
+
+class _TypingBubbleState extends State<_TypingBubble> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _buildDot(int index) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final double delay = index * 0.2;
+        final double value = sin((_controller.value * 2 * pi) - (delay * 2 * pi));
+        final double translation = (value * 3.0).clamp(-3.0, 3.0);
+        return Transform.translate(
+          offset: Offset(0, translation),
+          child: Container(
+            width: 5,
+            height: 5,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: const BoxDecoration(
+              color: Colors.white70,
+              shape: BoxShape.circle,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildDot(0),
+                _buildDot(1),
+                _buildDot(2),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '${widget.names} está escribiendo...',
+            style: const TextStyle(color: Colors.grey, fontSize: 11, fontStyle: FontStyle.italic),
           ),
         ],
       ),

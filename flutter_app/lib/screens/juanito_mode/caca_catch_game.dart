@@ -8,6 +8,7 @@ import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
 import '../../models/achievement.dart';
 import 'flame_games/sprite_rasterizer.dart';
+import '../juanito_mode_screen.dart';
 
 enum CatchItemType { poop, paper, bacteria, soap, goldenPoop, soda, chlorineBomb }
 
@@ -823,8 +824,8 @@ class _CacaCatchGameState extends State<CacaCatchGame> with SingleTickerProvider
   final List<CatchItem> _catchItems = [];
   Ticker? _ticker;
   double _lastElapsedMs = 0.0;
-  double _catchSpawnProb = 0.05;
-  double _catchSpeed = 0.015;
+  double _catchSpawnProb = 0.03;
+  double _catchSpeed = 0.008;
   
   bool _isMagnetActive = false;
   bool _isFeverMode = false;
@@ -1196,8 +1197,8 @@ class _CacaCatchGameState extends State<CacaCatchGame> with SingleTickerProvider
 
     // Dificultad progresiva (solo fuera de modo fiebre)
     if (!_isFeverMode && _score > 0 && _score % 10 == 0) {
-      _catchSpeed = 0.015 + (_score ~/ 10) * 0.0015;
-      _catchSpawnProb = 0.05 + (_score ~/ 10) * 0.003;
+      _catchSpeed = 0.008 + (_score ~/ 10) * 0.0008;
+      _catchSpawnProb = 0.03 + (_score ~/ 10) * 0.0015;
     }
 
     setState(() {});
@@ -1386,6 +1387,19 @@ class _CacaCatchGameState extends State<CacaCatchGame> with SingleTickerProvider
             ),
             Row(
               children: [
+                IconButton(
+                  icon: Icon(
+                    JuanitoModeScreen.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.grey,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      JuanitoModeScreen.toggleMute();
+                    });
+                  },
+                ),
                 IconButton(
                   icon: Icon(_isPausedLocal ? Icons.play_arrow_rounded : Icons.pause_rounded, color: Colors.grey, size: 18),
                   onPressed: () {

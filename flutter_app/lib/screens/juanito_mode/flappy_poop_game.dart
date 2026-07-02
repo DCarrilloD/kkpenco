@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'shared_game_components.dart';
 import '../../models/achievement.dart';
+import '../juanito_mode_screen.dart';
 
 class FlappyPipe {
   double x;
@@ -639,6 +640,44 @@ class _FlappyPoopGameState extends State<FlappyPoopGame> {
                       hasShield: _hasFlappyShield,
                       level: _level,
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  right: 12,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'PUNTUACIÓN: $_score',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1.5, 1.5))]),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(
+                              JuanitoModeScreen.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                              color: Colors.white70,
+                              size: 20,
+                            ),
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                JuanitoModeScreen.toggleMute();
+                              });
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.logout_rounded, color: Colors.white70, size: 20),
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              widget.onGameOver(_score);
+                            },
+                          ),
+                        ],
+                      )
+                    ],
                   ),
                 ),
                 if (_flashColor != null)

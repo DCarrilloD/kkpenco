@@ -835,11 +835,13 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                         child: GestureDetector(
                           onTap: () {
                             if (_isStopwatchRunning) {
+                              HapticFeedback.heavyImpact();
                               _stopwatchTimer?.cancel();
                               setState(() {
                                 _isStopwatchRunning = false;
                               });
                             } else {
+                              HapticFeedback.mediumImpact();
                               setState(() {
                                 _isStopwatchRunning = true;
                                 if (_stopwatchSeconds == 0) {
@@ -856,9 +858,10 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                           onLongPress: () {
                             // Resetear cronómetro si se mantiene pulsado
                             if (!_isStopwatchRunning && _stopwatchSeconds > 0) {
-                               setState(() {
-                                 _stopwatchSeconds = 0;
-                               });
+                              HapticFeedback.vibrate();
+                              setState(() {
+                                _stopwatchSeconds = 0;
+                              });
                             }
                           },
                           child: Container(

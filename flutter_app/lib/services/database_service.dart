@@ -115,6 +115,10 @@ class DatabaseService {
     }
   }
 
+  static List<dynamic> _parseJsonBackground(String rawJson) {
+    return jsonDecode(rawJson) as List<dynamic>;
+  }
+
   static Future<void> _loadMockData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -122,7 +126,7 @@ class DatabaseService {
       // Cargar Eventos
       final eventsJson = prefs.getString('mock_events');
       if (eventsJson != null) {
-        final List<dynamic> list = jsonDecode(eventsJson);
+        final List<dynamic> list = await compute(_parseJsonBackground, eventsJson);
         _mockEvents.clear();
         _mockEvents.addAll(list.map((m) => KKEvent(
           id: m['id'] ?? '',
@@ -145,7 +149,7 @@ class DatabaseService {
       // Cargar Mensajes
       final chatJson = prefs.getString('mock_chat');
       if (chatJson != null) {
-        final List<dynamic> list = jsonDecode(chatJson);
+        final List<dynamic> list = await compute(_parseJsonBackground, chatJson);
         _mockChatMessages.clear();
         _mockChatMessages.addAll(list.map((m) => ChatMessage(
           id: m['id'] ?? '',
@@ -167,7 +171,7 @@ class DatabaseService {
       // Cargar Rankings
       final rankingsJson = prefs.getString('mock_rankings');
       if (rankingsJson != null) {
-        final List<dynamic> list = jsonDecode(rankingsJson);
+        final List<dynamic> list = await compute(_parseJsonBackground, rankingsJson);
         _mockRankings.clear();
         _mockRankings.addAll(list.map((m) => {
           'uid': m['uid'] ?? '',

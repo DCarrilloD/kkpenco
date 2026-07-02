@@ -4,6 +4,7 @@ import 'package:flame/game.dart';
 import 'flame_games/flame_poop_invaders.dart';
 import 'in_game_overlay.dart';
 import '../../models/achievement.dart';
+import '../juanito_mode_screen.dart';
 
 class PoopInvadersGame extends StatefulWidget {
   final int highScore;
@@ -125,6 +126,19 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
             const Text('POOP INVADERS 👽', style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold)),
             Row(
               children: [
+                IconButton(
+                  icon: Icon(
+                    JuanitoModeScreen.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.grey,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      JuanitoModeScreen.toggleMute();
+                    });
+                  },
+                ),
                 IconButton(
                   icon: Icon(_isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded, color: Colors.grey, size: 18),
                   onPressed: () {

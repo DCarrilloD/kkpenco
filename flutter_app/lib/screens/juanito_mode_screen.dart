@@ -17,6 +17,15 @@ enum ActiveGame { none, selectMenu, cacaCatch, flappyPoop, toiletJump, poopInvad
 class JuanitoModeScreen extends StatefulWidget {
   const JuanitoModeScreen({super.key});
 
+  // Estado global estático del volumen/mute
+  static bool isMuted = false;
+
+  static Future<void> toggleMute() async {
+    isMuted = !isMuted;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('games_muted', isMuted);
+  }
+
   @override
   State<JuanitoModeScreen> createState() => _JuanitoModeScreenState();
 }
@@ -170,6 +179,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
+        JuanitoModeScreen.isMuted = prefs.getBool('games_muted') ?? false;
         _isMusicEnabled = prefs.getBool('zen_music_enabled') ?? true;
       });
       _updateMusicPlayback();
@@ -187,7 +197,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   Future<void> _updateMusicPlayback() async {
     try {
-      if (!_isMusicEnabled) {
+      if (!_isMusicEnabled || JuanitoModeScreen.isMuted) {
         if (_currentlyPlayingSource != null) {
           await _audioPlayer.stop();
           _currentlyPlayingSource = null;

@@ -5,8 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
-import 'in_game_overlay.dart';
 import '../../models/achievement.dart';
+import '../juanito_mode_screen.dart';
 
 class ToiletJumpGame extends StatefulWidget {
   final Function(int score, int coins) onGameOver;
@@ -611,6 +611,19 @@ Widget build(BuildContext context) {
             const Text('TOILET JUMP 🚽jump', style: TextStyle(color: Colors.orangeAccent, fontSize: 11, fontWeight: FontWeight.bold)),
             Row(
               children: [
+                IconButton(
+                  icon: Icon(
+                    JuanitoModeScreen.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                    color: Colors.grey,
+                    size: 18,
+                  ),
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    setState(() {
+                      JuanitoModeScreen.toggleMute();
+                    });
+                  },
+                ),
                 IconButton(
                   icon: Icon(_isPausedLocalLocal ? Icons.play_arrow_rounded : Icons.pause_rounded, color: Colors.grey, size: 18),
                   onPressed: () {
