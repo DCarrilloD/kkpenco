@@ -3,9 +3,11 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'in_game_overlay.dart';
 import 'shared_game_components.dart';
 import '../../models/achievement.dart';
+import 'flame_games/sprite_rasterizer.dart';
 
 enum CatchItemType { poop, paper, bacteria, soap, goldenPoop, soda, chlorineBomb }
 
@@ -37,6 +39,21 @@ class CacaCatchPainter extends CustomPainter {
   final List<FloatingText> floatingTexts;
   final int level;
 
+  final ui.Image? cachedToiletImage;
+  final ui.Image? cachedBacteriaImage;
+  final ui.Image? cachedSoapImage;
+  final ui.Image? cachedSodaImage;
+  final ui.Image? cachedBombImage;
+  final ui.Image? cachedPoopImage;
+  final ui.Image? cachedGoldenPoopImage;
+
+  final Color? toiletFlashColor;
+  final double toiletFlashTimer;
+
+  final int soapShieldTicksRemaining;
+  final int sodaFrenzyTicksRemaining;
+  final int feverTicksRemaining;
+
   CacaCatchPainter({
     required this.items,
     required this.toiletX,
@@ -48,9 +65,21 @@ class CacaCatchPainter extends CustomPainter {
     required this.height,
     required this.floatingTexts,
     required this.level,
+    required this.cachedToiletImage,
+    required this.cachedBacteriaImage,
+    required this.cachedSoapImage,
+    required this.cachedSodaImage,
+    required this.cachedBombImage,
+    required this.cachedPoopImage,
+    required this.cachedGoldenPoopImage,
+    required this.toiletFlashColor,
+    required this.toiletFlashTimer,
+    required this.soapShieldTicksRemaining,
+    required this.sodaFrenzyTicksRemaining,
+    required this.feverTicksRemaining,
   });
 
-  void _drawToiletVector(Canvas canvas, Offset center, double size) {
+  static void drawToiletVectorStatic(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
     
     // 1. Tanque trasero
@@ -110,7 +139,7 @@ class CacaCatchPainter extends CustomPainter {
     );
   }
 
-  void _drawBacteriaVector(Canvas canvas, Offset center, double size) {
+  static void drawBacteriaVectorStatic(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
     final paint = Paint()
       ..shader = ui.Gradient.radial(
@@ -122,12 +151,10 @@ class CacaCatchPainter extends CustomPainter {
     final path = Path();
     final int points = 10;
     final double angleStep = (2 * pi) / points;
-    final timeMs = DateTime.now().millisecondsSinceEpoch;
     
     for (int i = 0; i < points; i++) {
       double angle = i * angleStep;
-      double wave = sin(timeMs * 0.01 + i) * 3.0;
-      double r = half + (i % 2 == 0 ? 5.0 + wave : -2.0);
+      double r = half + (i % 2 == 0 ? 3.0 : -1.5);
       double px = center.dx + cos(angle) * r;
       double py = center.dy + sin(angle) * r;
       if (i == 0) {
@@ -160,7 +187,7 @@ class CacaCatchPainter extends CustomPainter {
     canvas.drawLine(Offset(center.dx + half * 0.5, center.dy - half * 0.4), Offset(center.dx + half * 0.1, center.dy - half * 0.2), eyebrowPaint);
   }
 
-  void _drawSoapVector(Canvas canvas, Offset center, double size) {
+  static void drawSoapVectorStatic(Canvas canvas, Offset center, double size) {
     final soapRect = Rect.fromCenter(center: center, width: size * 1.2, height: size * 0.7);
     final soapPaint = Paint()
       ..shader = ui.Gradient.linear(
@@ -187,7 +214,7 @@ class CacaCatchPainter extends CustomPainter {
     canvas.drawCircle(center + const Offset(16, 10), 3, bubblePaint);
   }
 
-  void _drawSodaVector(Canvas canvas, Offset center, double size) {
+  static void drawSodaVectorStatic(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
     final paint = Paint()
       ..shader = ui.Gradient.linear(
@@ -215,7 +242,7 @@ class CacaCatchPainter extends CustomPainter {
     canvas.drawPath(lPath, lightningPaint);
   }
 
-  void _drawBombVector(Canvas canvas, Offset center, double size) {
+  static void drawBombVectorStatic(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
     final paint = Paint()
       ..shader = ui.Gradient.radial(
@@ -236,15 +263,13 @@ class CacaCatchPainter extends CustomPainter {
       ..quadraticBezierTo(center.dx + 8, center.dy - half - 10, center.dx + 5, center.dy - half - 16);
     canvas.drawPath(wickPath, wickPaint);
     
-    final rand = Random();
     final sparkPaint = Paint()..color = Colors.amberAccent;
     final double sparkX = center.dx + 5;
     final double sparkY = center.dy - half - 16;
-    for (int i = 0; i < 4; i++) {
-      double sx = sparkX + (rand.nextDouble() - 0.5) * 8;
-      double sy = sparkY + (rand.nextDouble() - 0.5) * 8;
-      canvas.drawCircle(Offset(sx, sy), 1.5, sparkPaint);
-    }
+    canvas.drawCircle(Offset(sparkX - 2, sparkY - 2), 1.5, sparkPaint);
+    canvas.drawCircle(Offset(sparkX + 3, sparkY + 1), 1.5, sparkPaint);
+    canvas.drawCircle(Offset(sparkX - 1, sparkY + 4), 1.5, sparkPaint);
+    canvas.drawCircle(Offset(sparkX + 4, sparkY - 3), 1.5, sparkPaint);
   }
 
   @override
@@ -252,13 +277,13 @@ class CacaCatchPainter extends CustomPainter {
     // 1. Dibujar fondo estético por nivel
     Color bgColor;
     if (level == 1) {
-      bgColor = const Color(0xFF0D0D0D); // Negro
+      bgColor = const Color(0xFF0D0D0D);
     } else if (level == 2) {
-      bgColor = const Color(0xFF0F172A); // Azul oscuro
+      bgColor = const Color(0xFF0F172A);
     } else if (level == 3) {
-      bgColor = const Color(0xFF1E1B4B); // Morado oscuro
+      bgColor = const Color(0xFF1E1B4B);
     } else {
-      bgColor = const Color(0xFF450A0A); // Rojo volcán oscuro
+      bgColor = const Color(0xFF450A0A);
     }
     
     final bgPaint = Paint()..color = bgColor;
@@ -304,29 +329,44 @@ class CacaCatchPainter extends CustomPainter {
         canvas.drawCircle(itemCenter, 16, glowPaint);
       }
 
-      // Renderizar dibujo vectorial o emoji según el caso
-      if (item.type == CatchItemType.bacteria) {
-        _drawBacteriaVector(canvas, itemCenter, 24);
-      } else if (item.type == CatchItemType.soap) {
-        _drawSoapVector(canvas, itemCenter, 22);
-      } else if (item.type == CatchItemType.soda) {
-        _drawSodaVector(canvas, itemCenter, 22);
-      } else if (item.type == CatchItemType.chlorineBomb) {
-        _drawBombVector(canvas, itemCenter, 24);
+      // Renderizar dibujo vectorial cacheado (rasterizado) o emoji según el caso
+      if (item.type == CatchItemType.bacteria && cachedBacteriaImage != null) {
+        canvas.drawImage(cachedBacteriaImage!, Offset(itemCenter.dx - 24, itemCenter.dy - 24), Paint());
+      } else if (item.type == CatchItemType.soap && cachedSoapImage != null) {
+        canvas.drawImage(cachedSoapImage!, Offset(itemCenter.dx - 22, itemCenter.dy - 22), Paint());
+      } else if (item.type == CatchItemType.soda && cachedSodaImage != null) {
+        canvas.drawImage(cachedSodaImage!, Offset(itemCenter.dx - 22, itemCenter.dy - 22), Paint());
+      } else if (item.type == CatchItemType.chlorineBomb && cachedBombImage != null) {
+        canvas.drawImage(cachedBombImage!, Offset(itemCenter.dx - 24, itemCenter.dy - 24), Paint());
+      } else if (item.type == CatchItemType.poop && cachedPoopImage != null) {
+        canvas.drawImage(cachedPoopImage!, Offset(itemCenter.dx - 26, itemCenter.dy - 26), Paint());
+      } else if (item.type == CatchItemType.goldenPoop && cachedGoldenPoopImage != null) {
+        canvas.drawImage(cachedGoldenPoopImage!, Offset(itemCenter.dx - 26, itemCenter.dy - 26), Paint());
       } else {
-        // Para caca normal o dorada, pintar el emoji de skin correspondiente
-        final textPainter = TextPainter(
-          text: TextSpan(text: item.icon, style: const TextStyle(fontSize: 26)),
-          textDirection: TextDirection.ltr,
-        );
-        textPainter.layout();
-        textPainter.paint(canvas, Offset(itemCenter.dx - textPainter.width / 2, itemCenter.dy - textPainter.height / 2));
+        // Fallback vectorial dinámico o emoji
+        if (item.type == CatchItemType.bacteria) {
+          drawBacteriaVectorStatic(canvas, itemCenter, 24);
+        } else if (item.type == CatchItemType.soap) {
+          drawSoapVectorStatic(canvas, itemCenter, 22);
+        } else if (item.type == CatchItemType.soda) {
+          drawSodaVectorStatic(canvas, itemCenter, 22);
+        } else if (item.type == CatchItemType.chlorineBomb) {
+          drawBombVectorStatic(canvas, itemCenter, 24);
+        } else {
+          final textPainter = TextPainter(
+            text: TextSpan(text: item.icon, style: const TextStyle(fontSize: 26)),
+            textDirection: TextDirection.ltr,
+          );
+          textPainter.layout();
+          textPainter.paint(canvas, Offset(itemCenter.dx - textPainter.width / 2, itemCenter.dy - textPainter.height / 2));
+        }
       }
     }
 
-    // Dibujar inodoro vectorial en la parte inferior
+    // Dibujar inodoro en la parte inferior
     final toiletY = height - 50.0;
     final toiletRealX = toiletX * width;
+    final toiletCenter = Offset(toiletRealX, toiletY + 10);
     
     if (hasSoapShield) {
       final shieldPaint = Paint()
@@ -359,8 +399,45 @@ class CacaCatchPainter extends CustomPainter {
       canvas.drawCircle(Offset(toiletRealX, toiletY + 12), 32, feverPaint);
     }
 
-    // Taza de inodoro vectorial
-    _drawToiletVector(canvas, Offset(toiletRealX, toiletY + 10), 44);
+    // HUD Temporizadores circulares sobre la taza
+    if (soapShieldTicksRemaining > 0) {
+      final progressPaint = Paint()
+        ..color = Colors.blueAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      final rect = Rect.fromCircle(center: toiletCenter, radius: 34);
+      double sweepAngle = (soapShieldTicksRemaining / 130.0).clamp(0.0, 1.0) * 2 * pi;
+      canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
+    }
+    if (sodaFrenzyTicksRemaining > 0) {
+      final progressPaint = Paint()
+        ..color = Colors.cyanAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      final rect = Rect.fromCircle(center: toiletCenter, radius: 38);
+      double sweepAngle = (sodaFrenzyTicksRemaining / 200.0).clamp(0.0, 1.0) * 2 * pi;
+      canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
+    }
+    if (feverTicksRemaining > 0) {
+      final progressPaint = Paint()
+        ..color = Colors.amberAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      final rect = Rect.fromCircle(center: toiletCenter, radius: 30);
+      double sweepAngle = (feverTicksRemaining / 130.0).clamp(0.0, 1.0) * 2 * pi;
+      canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
+    }
+
+    // Taza de inodoro vectorial (o cacheada)
+    if (cachedToiletImage != null) {
+      final toiletPaint = Paint();
+      if (toiletFlashTimer > 0 && toiletFlashColor != null) {
+        toiletPaint.colorFilter = ColorFilter.mode(toiletFlashColor!, BlendMode.srcATop);
+      }
+      canvas.drawImage(cachedToiletImage!, Offset(toiletRealX - 44, toiletY + 10 - 44), toiletPaint);
+    } else {
+      drawToiletVectorStatic(canvas, Offset(toiletRealX, toiletY + 10), 44);
+    }
 
     // Dibujar partículas
     for (var particle in particles) {
@@ -382,9 +459,19 @@ class CacaCatchPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Dibujar textos flotantes
+    // Dibujar textos flotantes animados (con rotación y escala de rebote)
     for (var ft in floatingTexts) {
       canvas.save();
+      canvas.translate(ft.x, ft.y);
+      
+      // Inclinación suave basada en el texto para no ser rígido
+      double angle = ((ft.text.hashCode % 10) - 5) * 0.04;
+      canvas.rotate(angle);
+      
+      // Escala de pop inicial
+      double scale = ft.opacity > 0.8 ? 1.0 + (ft.opacity - 0.8) * 1.5 : 1.0;
+      canvas.scale(scale);
+
       final textPainter = TextPainter(
         text: TextSpan(
           text: ft.text,
@@ -400,7 +487,7 @@ class CacaCatchPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       );
       textPainter.layout();
-      textPainter.paint(canvas, Offset(ft.x - textPainter.width / 2, ft.y - textPainter.height / 2));
+      textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
       canvas.restore();
     }
   }
@@ -662,7 +749,7 @@ class CacaCatchGame extends StatefulWidget {
   State<CacaCatchGame> createState() => _CacaCatchGameState();
 }
 
-class _CacaCatchGameState extends State<CacaCatchGame> {
+class _CacaCatchGameState extends State<CacaCatchGame> with SingleTickerProviderStateMixin {
   double _shakeX = 0.0;
   double _shakeY = 0.0;
   Color? _flashColor;
@@ -734,7 +821,8 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
   int _level = 1;
   double _toiletX = 0.5;
   final List<CatchItem> _catchItems = [];
-  Timer? _cacaCatchTimer;
+  Ticker? _ticker;
+  double _lastElapsedMs = 0.0;
   double _catchSpawnProb = 0.05;
   double _catchSpeed = 0.015;
   
@@ -764,18 +852,66 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
   // Audio flags (stubbed for now or we can ignore them if they don't matter inside)
   bool _isSoundEnabled = true;
 
+  // Sprite cache & toilet flash states
+  ui.Image? _cachedToiletImage;
+  ui.Image? _cachedBacteriaImage;
+  ui.Image? _cachedSoapImage;
+  ui.Image? _cachedSodaImage;
+  ui.Image? _cachedBombImage;
+  ui.Image? _cachedPoopImage;
+  ui.Image? _cachedGoldenPoopImage;
+  Color? _toiletFlashColor;
+  double _toiletFlashTimer = 0.0;
+
   @override
   void initState() {
     super.initState();
     _hasExtraLifeLocal = widget.hasExtraLife;
     _hasInitialSoapShieldLocal = widget.hasInitialSoapShield;
     _hasFeverMagnetLocal = widget.hasFeverMagnet;
+    _rasterizeAssets();
     _startCacaCatch();
+  }
+
+  Future<void> _rasterizeAssets() async {
+    _cachedToiletImage = await SpriteRasterizer.rasterize(88, 88, (canvas) {
+      CacaCatchPainter.drawToiletVectorStatic(canvas, const Offset(44, 44), 44);
+    });
+    _cachedBacteriaImage = await SpriteRasterizer.rasterize(48, 48, (canvas) {
+      CacaCatchPainter.drawBacteriaVectorStatic(canvas, const Offset(24, 24), 24);
+    });
+    _cachedSoapImage = await SpriteRasterizer.rasterize(44, 44, (canvas) {
+      CacaCatchPainter.drawSoapVectorStatic(canvas, const Offset(22, 22), 22);
+    });
+    _cachedSodaImage = await SpriteRasterizer.rasterize(44, 44, (canvas) {
+      CacaCatchPainter.drawSodaVectorStatic(canvas, const Offset(22, 22), 22);
+    });
+    _cachedBombImage = await SpriteRasterizer.rasterize(48, 48, (canvas) {
+      CacaCatchPainter.drawBombVectorStatic(canvas, const Offset(24, 24), 24);
+    });
+    _cachedPoopImage = await SpriteRasterizer.rasterize(52, 52, (canvas) {
+      final textPainter = TextPainter(
+        text: TextSpan(text: widget.equippedSkin, style: const TextStyle(fontSize: 26)),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(26 - textPainter.width / 2, 26 - textPainter.height / 2));
+    });
+    _cachedGoldenPoopImage = await SpriteRasterizer.rasterize(52, 52, (canvas) {
+      final textPainter = TextPainter(
+        text: const TextSpan(text: '⭐', style: TextStyle(fontSize: 26)),
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(canvas, Offset(26 - textPainter.width / 2, 26 - textPainter.height / 2));
+    });
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _cacaCatchTimer?.cancel();
+    _ticker?.stop();
+    _ticker?.dispose();
     super.dispose();
   }
   
@@ -791,7 +927,7 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
   // --- MINIJUEGO 1: CACA CATCH (ATRACA) ---
   // ==========================================
   void _startCacaCatch() {
-        _stopCacaCatch();
+    _stopCacaCatch();
     setState(() {
       _score = 0;
       _level = 1;
@@ -817,10 +953,6 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
       
       _particles.clear();
       
-      
-
-      // Variables de juego profesional
-      
       _floatingTexts.clear();
       _comboMultiplier = 1;
       _poopsCaughtConsecutively = 0;
@@ -832,20 +964,32 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
       widget.onUnlockAchievement();
     }
 
-    _cacaCatchTimer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
-      _updateCacaCatchStep();
+    _lastElapsedMs = 0.0;
+    _ticker = createTicker((elapsed) {
+      final currentMs = elapsed.inMilliseconds.toDouble();
+      double dt = _lastElapsedMs == 0.0 ? 0.016 : (currentMs - _lastElapsedMs) / 1000.0;
+      if (dt > 0.1) dt = 0.016; // prevenir saltos masivos al pausar o reanudar
+      _lastElapsedMs = currentMs;
+      _updateCacaCatchStep(dt);
     });
+    _ticker!.start();
   }
 
   void _stopCacaCatch() {
-    _cacaCatchTimer?.cancel();
-    _cacaCatchTimer = null;
+    _ticker?.stop();
+    _ticker?.dispose();
+    _ticker = null;
   }
 
-  void _updateCacaCatchStep() {
-    final double dt = 0.016;
+  void _updateCacaCatchStep(double dt) {
     if (_isPausedLocal || _isCacaCatchGameOver) return;
     if (_gameWidth < 100 || _gameHeight < 100) return;
+
+    // Actualizar flash de taza
+    if (_toiletFlashTimer > 0) {
+      _toiletFlashTimer -= dt;
+      if (_toiletFlashTimer <= 0) _toiletFlashColor = null;
+    }
 
     // Actualizar partículas
     for (int i = _particles.length - 1; i >= 0; i--) {
@@ -995,6 +1139,14 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
       final item = _catchItems[i];
       item.y += currentSpeed * dt * 33.3;
 
+      if (item.type == CatchItemType.goldenPoop && rand.nextDouble() < 0.15) {
+        _spawnParticles(item.x * _gameWidth, item.y * _gameHeight, '✨', 1, speed: 0.3);
+      } else if (item.type == CatchItemType.soda && rand.nextDouble() < 0.15) {
+        _spawnParticles(item.x * _gameWidth, item.y * _gameHeight, '⚡', 1, speed: 0.3);
+      } else if (item.type == CatchItemType.soap && rand.nextDouble() < 0.15) {
+        _spawnParticles(item.x * _gameWidth, item.y * _gameHeight, '🫧', 1, speed: 0.3);
+      }
+
       if (item.type == CatchItemType.bacteria && _level >= 2) {
         final double timeSec = DateTime.now().millisecondsSinceEpoch / 1000.0;
         double speedFactor = _level == 2 ? 1.5 : 2.5;
@@ -1054,6 +1206,24 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
   void _handleCacaCatchHit(CatchItem item) {
     final px = item.x * _gameWidth;
     final py = item.y * _gameHeight;
+
+    // Configurar Hit Flash en inodoro
+    _toiletFlashTimer = 0.08;
+    if (item.type == CatchItemType.poop) {
+      _toiletFlashColor = Colors.brown[300];
+    } else if (item.type == CatchItemType.paper) {
+      _toiletFlashColor = Colors.white;
+    } else if (item.type == CatchItemType.soap) {
+      _toiletFlashColor = Colors.blueAccent;
+    } else if (item.type == CatchItemType.goldenPoop) {
+      _toiletFlashColor = Colors.amberAccent;
+    } else if (item.type == CatchItemType.soda) {
+      _toiletFlashColor = Colors.cyanAccent;
+    } else if (item.type == CatchItemType.chlorineBomb) {
+      _toiletFlashColor = Colors.redAccent;
+    } else if (item.type == CatchItemType.bacteria) {
+      _toiletFlashColor = Colors.purpleAccent;
+    }
 
     if (item.type == CatchItemType.poop) {
       HapticFeedback.lightImpact();
@@ -1246,9 +1416,9 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
               _gameHeight = constraints.maxHeight;
 
               if (_gameWidth > 50 && _gameHeight > 50) {
-                if (_cacaCatchTimer == null && !_isCacaCatchGameOver && !_isPausedLocal) {
+                if (_ticker == null && !_isCacaCatchGameOver && !_isPausedLocal) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted && _cacaCatchTimer == null) {
+                    if (mounted && _ticker == null) {
                       _startCacaCatch();
                     }
                   });
@@ -1283,18 +1453,32 @@ class _CacaCatchGameState extends State<CacaCatchGame> {
                       child: Stack(
                         children: [
                           Positioned.fill(
-                            child: CustomPaint(
-                              painter: CacaCatchPainter(
-                                items: _catchItems,
-                                toiletX: _toiletX,
-                                particles: _particles,
-                                hasSoapShield: _hasSoapShield,
-                                isSodaFrenzy: _isSodaFrenzy,
-                                isFeverMode: _isFeverMode,
-                                width: _gameWidth,
-                                height: _gameHeight,
-                                floatingTexts: _floatingTexts,
-                                level: _level,
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                painter: CacaCatchPainter(
+                                  items: _catchItems,
+                                  toiletX: _toiletX,
+                                  particles: _particles,
+                                  hasSoapShield: _hasSoapShield,
+                                  isSodaFrenzy: _isSodaFrenzy,
+                                  isFeverMode: _isFeverMode,
+                                  width: _gameWidth,
+                                  height: _gameHeight,
+                                  floatingTexts: _floatingTexts,
+                                  level: _level,
+                                  cachedToiletImage: _cachedToiletImage,
+                                  cachedBacteriaImage: _cachedBacteriaImage,
+                                  cachedSoapImage: _cachedSoapImage,
+                                  cachedSodaImage: _cachedSodaImage,
+                                  cachedBombImage: _cachedBombImage,
+                                  cachedPoopImage: _cachedPoopImage,
+                                  cachedGoldenPoopImage: _cachedGoldenPoopImage,
+                                  toiletFlashColor: _toiletFlashColor,
+                                  toiletFlashTimer: _toiletFlashTimer,
+                                  soapShieldTicksRemaining: _soapShieldTicksRemaining,
+                                  sodaFrenzyTicksRemaining: _sodaFrenzyTicksRemaining,
+                                  feverTicksRemaining: _feverTicksRemaining,
+                                ),
                               ),
                             ),
                           ),

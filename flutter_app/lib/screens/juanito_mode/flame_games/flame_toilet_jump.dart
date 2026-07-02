@@ -39,6 +39,8 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   // Variables for drag control
   double horizontalVelocity = 0;
 
+  ui.Image? cachedBacteriaImage;
+
   ToiletJumpFlameGame({
     required this.equippedSkin,
     required this.hasInitialSpring,
@@ -54,6 +56,37 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     super.onLoad();
 
     await FlameAudio.audioCache.loadAll(['jump.wav', 'coin.wav', 'hit.wav']);
+
+    cachedBacteriaImage = await SpriteRasterizer.rasterize(30, 30, (canvas) {
+      final center = const Offset(15, 15);
+      final half = 15.0;
+      final paint = Paint()
+        ..shader = ui.Gradient.radial(Offset(center.dx - 3, center.dy - 3), half, [Colors.purpleAccent[200]!, Colors.purple[800]!]);
+      
+      final path = Path();
+      final points = 10;
+      final angleStep = (2 * pi) / points;
+      for (int i = 0; i < points; i++) {
+        double angle = i * angleStep;
+        double r = half + (i % 2 == 0 ? 2.0 : -1.0);
+        double px = center.dx + cos(angle) * r;
+        double py = center.dy + sin(angle) * r;
+        if (i == 0) {
+          path.moveTo(px, py);
+        } else {
+          path.lineTo(px, py);
+        }
+      }
+      path.close();
+      canvas.drawPath(path, paint);
+      
+      final eyePaint = Paint()..color = Colors.redAccent;
+      final pupilPaint = Paint()..color = Colors.white;
+      canvas.drawCircle(Offset(center.dx - 4.5, center.dy - 1.5), 3.0, eyePaint);
+      canvas.drawCircle(Offset(center.dx - 5.5, center.dy - 2.5), 1.0, pupilPaint);
+      canvas.drawCircle(Offset(center.dx + 4.5, center.dy - 1.5), 3.0, eyePaint);
+      canvas.drawCircle(Offset(center.dx + 3.5, center.dy - 2.5), 1.0, pupilPaint);
+    });
 
     world = World();
     cameraComponent = CameraComponent(world: world)..viewfinder.anchor = Anchor.center;
@@ -526,34 +559,38 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
   void render(Canvas canvas) {
     if (isDead) return;
     
-    final center = Offset(size.x / 2, size.y / 2);
-    final half = size.x / 2;
-    
-    final paint = Paint()
-      ..shader = ui.Gradient.radial(Offset(center.dx - 3, center.dy - 3), half, [Colors.purpleAccent[200]!, Colors.purple[800]!]);
-    
-    final path = Path();
-    final points = 10;
-    final angleStep = (2 * pi) / points;
-    final timeMs = DateTime.now().millisecondsSinceEpoch;
-    
-    for (int i = 0; i < points; i++) {
-      double angle = i * angleStep;
-      double wave = sin(timeMs * 0.015 + i) * 2.0;
-      double r = half + (i % 2 == 0 ? 4.0 + wave : -1.5);
-      double px = center.dx + cos(angle) * r;
-      double py = center.dy + sin(angle) * r;
-      if (i == 0) path.moveTo(px, py);
-      else path.lineTo(px, py);
+    if (game.cachedBacteriaImage != null) {
+      canvas.drawImage(game.cachedBacteriaImage!, Offset.zero, Paint());
+    } else {
+      // Fallback vectorial
+      final center = Offset(size.x / 2, size.y / 2);
+      final half = size.x / 2;
+      
+      final paint = Paint()
+        ..shader = ui.Gradient.radial(Offset(center.dx - 3, center.dy - 3), half, [Colors.purpleAccent[200]!, Colors.purple[800]!]);
+      
+      final path = Path();
+      final points = 10;
+      final angleStep = (2 * pi) / points;
+      final timeMs = DateTime.now().millisecondsSinceEpoch;
+      
+      for (int i = 0; i < points; i++) {
+        double angle = i * angleStep;
+        double wave = sin(timeMs * 0.015 + i) * 2.0;
+        double r = half + (i % 2 == 0 ? 4.0 + wave : -1.5);
+        double px = center.dx + cos(angle) * r;
+        double py = center.dy + sin(angle) * r;
+        if (i == 0) path.moveTo(px, py);
+        else path.lineTo(px, py);
+      }
+      path.close();
+      canvas.drawPath(path, paint);
+      
+      // Eyes
+      final eyePaint = Paint()..color = Colors.redAccent;
+      canvas.drawCircle(Offset(center.dx - half * 0.35, center.dy - half * 0.1), 4.0, eyePaint);
+      canvas.drawCircle(Offset(center.dx + half * 0.35, center.dy - half * 0.1), 4.0, eyePaint);
     }
-    path.close();
-    canvas.drawPath(path, paint);
-    
-    // Eyes
-    final eyePaint = Paint()..color = Colors.redAccent;
-    final pupilPaint = Paint()..color = Colors.white;
-    canvas.drawCircle(Offset(center.dx - half * 0.35, center.dy - half * 0.1), 4.0, eyePaint);
-    canvas.drawCircle(Offset(center.dx + half * 0.35, center.dy - half * 0.1), 4.0, eyePaint);
   }
 }
 

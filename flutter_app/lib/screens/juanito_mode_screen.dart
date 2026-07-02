@@ -3,14 +3,11 @@ import 'juanito_mode/caca_catch_game.dart';
 import 'juanito_mode/flappy_poop_game.dart';
 import 'juanito_mode/toilet_jump_game.dart';
 import 'juanito_mode/poop_invaders_game.dart';
-import 'juanito_mode/shared_game_components.dart';
-
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:ui' as ui;
-import 'package:audioplayers/audioplayers.dart';
+import 'package:flame_audio/flame_audio.dart';
 import '../services/database_service.dart';
 import '../services/auth_service.dart';
 import '../models/achievement.dart';
@@ -93,6 +90,21 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     _loadHighScores();
     _loadZenProfile();
     _loadMusicPreference();
+    _precacheFlameAudios();
+  }
+
+  void _precacheFlameAudios() {
+    FlameAudio.audioCache.loadAll([
+      'jump.wav',
+      'coin.wav',
+      'hit.wav',
+      'shoot.wav',
+      'explosion.wav',
+    ]).then((_) {
+      debugPrint('Audios de Flame precargados con éxito.');
+    }).catchError((e) {
+      debugPrint('Error precargando audios de Flame: $e');
+    });
   }
 
   @override

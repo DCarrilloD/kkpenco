@@ -42,6 +42,10 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   final List<int> bossSpawnTimes = [30, 75, 135, 210, 295, 390, 495, 610];
   double ufoTimer = 0.0;
 
+  // Screen shake state
+  double shakeTimer = 0.0;
+  double shakeIntensity = 0.0;
+
   PoopInvadersFlameGame({
     required this.equippedSkin,
     required this.hasInitialTripleShot,
@@ -91,6 +95,11 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     gameTimeSeconds += dt;
     ufoTimer += dt;
     onTimeChanged(gameTimeSeconds);
+
+    if (shakeTimer > 0) {
+      shakeTimer -= dt;
+      if (shakeTimer <= 0) shakeIntensity = 0.0;
+    }
 
     // Boss spawning logic
     if (nextBossIndex - 1 < bossSpawnTimes.length &&
@@ -199,11 +208,13 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
       player.hasShield = false;
       addFloatingText('¡ESCUDO ROTO! 🫧', player.position.clone()..y -= 30, Colors.blueAccent);
       HapticFeedback.heavyImpact();
+      shakeScreen(duration: 0.25, intensity: 8.0);
     } else {
       lives--;
       onLivesChanged(lives);
       addFloatingText('💔 -1 Vida', player.position.clone()..y -= 30, Colors.redAccent);
       HapticFeedback.vibrate();
+      shakeScreen(duration: 0.35, intensity: 12.0);
       
       if (lives <= 0) {
         triggerGameOver();
@@ -226,34 +237,32 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   }
 
   void spawnLaser({required Vector2 pos, required double vy, double vx = 0, required bool fromPlayer, String type = 'normal'}) {
-    for (int i = 0; i < inactiveLasers.length; i++) {
-      if (inactiveLasers[i].type == type && inactiveLasers[i].fromPlayer == fromPlayer) {
-        var l = inactiveLasers.removeAt(i);
-        l.vy = vy;
-        l.vx = vx;
-        l.position = pos.clone();
-        add(l);
-        return;
-      }
-    }
     add(LaserComponent(vy: vy, vx: vx, fromPlayer: fromPlayer, type: type)..position = pos.clone());
   }
 
   void spawnParticles(Vector2 pos, String emoji, int count, {double speed = 1.0}) {
     for (int i = 0; i < count; i++) {
-      GameParticleComponent? p;
-      for (int j = 0; j < inactiveParticles.length; j++) {
-        if (inactiveParticles[j].emoji == emoji) {
-          p = inactiveParticles.removeAt(j);
-          p.reset(speed);
-          p.position = pos.clone();
-          add(p);
-          break;
-        }
-      }
-      if (p == null) {
-        add(GameParticleComponent(emoji: emoji, speedMod: speed)..position = pos.clone());
-      }
+      add(GameParticleComponent(emoji: emoji, speedMod: speed)..position = pos.clone());
+    }
+  }
+
+  void shakeScreen({double duration = 0.2, double intensity = 6.0}) {
+    shakeTimer = duration;
+    shakeIntensity = intensity;
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (shakeTimer > 0) {
+      final rand = Random();
+      final dx = (rand.nextDouble() - 0.5) * 2 * shakeIntensity;
+      final dy = (rand.nextDouble() - 0.5) * 2 * shakeIntensity;
+      canvas.save();
+      canvas.translate(dx, dy);
+      super.render(canvas);
+      canvas.restore();
+    } else {
+      super.render(canvas);
     }
   }
 }
@@ -355,6 +364,10 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
       fireCooldown = burstShotTime > 0 ? 0.15 : 0.36;
       _fireLaser();
     }
+
+    if (Random().nextDouble() < 0.22) {
+      game.spawnParticles(position.clone() + Vector2(0, 20), '🧼', 1, speed: 0.5);
+    }
   }
 
   void _fireLaser() {
@@ -368,7 +381,7 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
     } else {
       game.spawnLaser(pos: position.clone() + Vector2(0, -25), vy: lSpeed, vx: 0, fromPlayer: true);
     }
-    FlameAudio.play('shoot.wav', volume: 0.3);
+    FlameAudio.play('shoot.wav', volume: 0.06);
   }
 
   @override
@@ -380,6 +393,25 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
       final borderPaint = Paint()..color = Colors.blueAccent..style = PaintingStyle.stroke..strokeWidth = 2.0;
       canvas.drawCircle(center, 44, shieldPaint);
       canvas.drawCircle(center, 44, borderPaint);
+    }
+
+    if (tripleShotTime > 0) {
+      final progressPaint = Paint()
+        ..color = Colors.amberAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      final rect = Rect.fromCircle(center: center, radius: 36);
+      double sweepAngle = (tripleShotTime / 6.0) * 2 * pi;
+      canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
+    }
+    if (burstShotTime > 0) {
+      final progressPaint = Paint()
+        ..color = Colors.cyanAccent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0;
+      final rect = Rect.fromCircle(center: center, radius: 32);
+      double sweepAngle = (burstShotTime / 6.0) * 2 * pi;
+      canvas.drawArc(rect, -pi / 2, sweepAngle, false, progressPaint);
     }
 
     canvas.save();
@@ -472,7 +504,6 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
   }
 
   void _disableAndPool() {
-    game.inactiveLasers.add(this);
     removeFromParent();
   }
 
@@ -499,6 +530,10 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
 
     position.x += vx * dt;
     position.y += currentVy * dt;
+
+    if (fromPlayer && Random().nextDouble() < 0.22) {
+      game.spawnParticles(position.clone(), '✨', 1, speed: 0.3);
+    }
 
     if (position.y < -50 || position.y > game.size.y + 50 || position.x < -50 || position.x > game.size.y + 50) {
       _disableAndPool();
@@ -566,6 +601,10 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
   double time = 0;
   double bossAttackTimer = 0;
 
+  ui.Image? cachedEnemyImage;
+  ui.Image? cachedDamagedEnemyImage;
+  double hitFlashTimer = 0.0;
+
   InvaderEnemy({
     required this.type,
     required this.maxHp,
@@ -579,11 +618,35 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
   }
 
   @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+
+    // El buffer medirá size.x * 2 para evitar recortes visuales de cilios/antenas/formas anchas
+    cachedEnemyImage = await SpriteRasterizer.rasterize(size.x * 2, size.y * 2, (canvas) {
+      _drawEnemyVector(canvas, Offset(size.x, size.y), size.x / 2, isDamaged: false);
+    });
+
+    if (visualType == 'alien' || type == 'boss') {
+      cachedDamagedEnemyImage = await SpriteRasterizer.rasterize(size.x * 2, size.y * 2, (canvas) {
+        _drawEnemyVector(canvas, Offset(size.x, size.y), size.x / 2, isDamaged: true);
+      });
+    }
+  }
+
+  @override
   void update(double dt) {
     super.update(dt);
     time += dt;
 
-    if (visualType == 'alien' && type != 'boss') {
+    if (hitFlashTimer > 0) {
+      hitFlashTimer -= dt;
+    }
+
+    if (type == 'boss') {
+      double healthPct = hp / maxHp;
+      double speedMultiplier = healthPct < 0.4 ? 1.5 : 1.0;
+      position.x += velocity.x * speedMultiplier * dt;
+    } else if (visualType == 'alien') {
       position.x += velocity.x * dt + sin(time * 5.0) * 1.5;
     } else {
       position.x += velocity.x * dt;
@@ -612,7 +675,10 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
   }
 
   void _bossAttacks(double dt) {
-    bossAttackTimer += dt;
+    double healthPct = hp / maxHp;
+    double attackCooldownMod = healthPct < 0.4 ? 1.6 : 1.0;
+    bossAttackTimer += dt * attackCooldownMod;
+
     if (bossType == 'fire' && bossAttackTimer >= 2.5) {
       bossAttackTimer = 0;
       game.spawnLaser(pos: Vector2(game.player.position.x, position.y + 30), vy: 120.0, fromPlayer: false, type: 'meteor');
@@ -626,9 +692,15 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
       game.spawnLaser(pos: position.clone()..x += (Random().nextDouble() - 0.5) * 60, vy: 180.0, fromPlayer: false, type: 'acid');
     }
 
-    // El Jefe lanza un láser básico aleatoriamente (~1.2 veces por segundo)
-    if (Random().nextDouble() < 1.2 * dt) {
+    // El Jefe lanza un láser básico aleatoriamente (~1.2 veces por segundo, o 2.4 si está furioso)
+    double baseAttackChance = healthPct < 0.4 ? 2.4 : 1.2;
+    if (Random().nextDouble() < baseAttackChance * dt) {
       game.spawnLaser(pos: position.clone()..y += 30, vy: 220.0, fromPlayer: false);
+      if (healthPct < 0.4) {
+        // Disparos en diagonal extra cuando está furioso
+        game.spawnLaser(pos: position.clone()..y += 30, vy: 200.0, vx: -60.0, fromPlayer: false);
+        game.spawnLaser(pos: position.clone()..y += 30, vy: 200.0, vx: 60.0, fromPlayer: false);
+      }
     }
   }
 
@@ -647,6 +719,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
   void hit() {
     hp--;
+    hitFlashTimer = 0.08;
     game.spawnParticles(position.clone(), '💥', 3, speed: 2.0);
     
     if (hp <= 0) {
@@ -656,7 +729,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
   void die({bool silent = false}) {
     if (!silent) {
-      FlameAudio.play('explosion.wav', volume: 0.6);
+      FlameAudio.play('explosion.wav', volume: 0.12);
       if (type == 'boss') {
         game.isBossActive = false;
         int reward = 500 + (game.nextBossIndex - 1) * 100;
@@ -665,6 +738,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
         game.addFloatingText('¡JEFE DEFEATED! +$reward 🏆', position.clone(), Colors.greenAccent, size: 18);
         game.onAddKcoins(80);
         HapticFeedback.heavyImpact();
+        game.shakeScreen(duration: 0.5, intensity: 15.0);
       } else if (type == 'ufo') {
         game.addScore(250);
         game.onAddKcoins(50);
@@ -692,31 +766,11 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
   @override
   void render(Canvas canvas) {
-    final center = Offset(size.x / 2, size.y / 2);
-    final double half = size.x / 2;
-
-    if (type == 'ufo') {
-      final goldPaint = Paint()..shader = ui.Gradient.linear(Offset(center.dx - half, center.dy - half), Offset(center.dx + half, center.dy + half), [Colors.yellow, Colors.orangeAccent, Colors.yellowAccent], [0.0, 0.5, 1.0]);
-      final ufoPath = Path()..moveTo(center.dx - half * 1.5, center.dy)..quadraticBezierTo(center.dx, center.dy - half, center.dx + half * 1.5, center.dy)..quadraticBezierTo(center.dx, center.dy + half * 0.8, center.dx - half * 1.5, center.dy);
-      canvas.drawPath(ufoPath, goldPaint);
-      canvas.drawPath(ufoPath, Paint()..color = Colors.white24..style = PaintingStyle.stroke..strokeWidth = 2);
-      canvas.drawCircle(Offset(center.dx, center.dy - half * 0.4), half * 0.6, Paint()..color = Colors.cyanAccent.withAlpha(150));
-      return;
-    }
-
-    Color color1 = Colors.brown[400]!;
-    Color color2 = Colors.brown[800]!;
-    if (type == 'fast') { color1 = Colors.greenAccent[400]!; color2 = Colors.teal[900]!; }
-    else if (type == 'boss') {
-      if (bossType == 'fire') { color1 = Colors.orangeAccent[700]!; color2 = const Color(0xFF6F0000); }
-      else if (bossType == 'electric') { color1 = Colors.cyanAccent[400]!; color2 = const Color(0xFF003050); }
-      else if (bossType == 'acid') { color1 = Colors.greenAccent[400]!; color2 = const Color(0xFF004400); }
-    }
-
-    final timeMs = DateTime.now().millisecondsSinceEpoch;
-
-    // Boss Auras
+    // 1. Auras del Boss (se dibujan antes del cuerpo en tiempo real con animación)
     if (type == 'boss') {
+      final center = Offset(size.x / 2, size.y / 2);
+      final double half = size.x / 2;
+      final timeMs = DateTime.now().millisecondsSinceEpoch;
       if (bossType == 'fire') {
         final double wave1 = sin(timeMs * 0.02) * 4.0;
         final double wave2 = cos(timeMs * 0.025) * 3.0;
@@ -731,13 +785,61 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
           canvas.drawLine(Offset(center.dx + cos(angle) * half * 0.9, center.dy + sin(angle) * half * 0.9), Offset(center.dx + cos(angle + 0.1) * half * 1.5, center.dy + sin(angle + 0.1) * half * 1.5), sparkPaint);
         }
       } else if (bossType == 'acid') {
-        final bubblePaint = Paint()..color = Colors.greenAccent[400]!.withAlpha(160);
+        final bubblePaint = Paint()..color = (Colors.greenAccent[400] ?? Colors.greenAccent).withAlpha(160);
         final rand = Random(42);
         for (int i = 0; i < 4; i++) {
           double offsetTime = (timeMs * 0.03 * (0.8 + rand.nextDouble()) + i * 20) % (half * 1.5);
           canvas.drawCircle(Offset(center.dx + (rand.nextDouble() - 0.5) * half * 1.2, center.dy + half * 0.4 + offsetTime), 3, bubblePaint);
         }
       }
+    }
+
+    // 2. Dibujar Cuerpo (desde la imagen cacheada)
+    var img = cachedEnemyImage;
+    if ((visualType == 'alien' || type == 'boss') && hp < maxHp && cachedDamagedEnemyImage != null) {
+      img = cachedDamagedEnemyImage;
+    }
+
+    if (img != null) {
+      final paint = Paint();
+      if (hitFlashTimer > 0) {
+        paint.colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop);
+      }
+      // Dibuja la imagen cacheada de 2x tamaño centrada en la posición del componente
+      canvas.drawImage(img, Offset(-size.x / 2, -size.y / 2), paint);
+    }
+
+    // 3. Barra de vida del Boss (se dibuja encima del cuerpo)
+    if (type == 'boss') {
+      final center = Offset(size.x / 2, size.y / 2);
+      final barRect = Rect.fromCenter(center: Offset(center.dx, center.dy - 44), width: 60, height: 6);
+      canvas.drawRRect(RRect.fromRectAndRadius(barRect, const Radius.circular(3)), Paint()..color = Colors.black54);
+      double lifePct = (hp / maxHp).clamp(0.0, 1.0);
+      final lifeRect = Rect.fromLTWH(barRect.left, barRect.top, 60 * lifePct, 6);
+      Color hpColor = Colors.redAccent;
+      if (bossType == 'electric') hpColor = Colors.cyanAccent;
+      if (bossType == 'acid') hpColor = Colors.greenAccent[400] ?? Colors.greenAccent;
+      canvas.drawRRect(RRect.fromRectAndRadius(lifeRect, const Radius.circular(3)), Paint()..color = hpColor);
+    }
+  }
+
+  void _drawEnemyVector(Canvas canvas, Offset center, double half, {required bool isDamaged}) {
+    if (type == 'ufo') {
+      final goldPaint = Paint()..shader = ui.Gradient.linear(Offset(center.dx - half, center.dy - half), Offset(center.dx + half, center.dy + half), [Colors.yellow, Colors.orangeAccent, Colors.yellowAccent], [0.0, 0.5, 1.0]);
+      final ufoPath = Path()..moveTo(center.dx - half * 1.5, center.dy)..quadraticBezierTo(center.dx, center.dy - half, center.dx + half * 1.5, center.dy)..quadraticBezierTo(center.dx, center.dy + half * 0.8, center.dx - half * 1.5, center.dy);
+      canvas.drawPath(ufoPath, goldPaint);
+      canvas.drawPath(ufoPath, Paint()..color = Colors.white24..style = PaintingStyle.stroke..strokeWidth = 2);
+      canvas.drawCircle(Offset(center.dx, center.dy - half * 0.4), half * 0.6, Paint()..color = Colors.cyanAccent.withAlpha(150));
+      return;
+    }
+
+    Color color1 = Colors.brown[400] ?? Colors.brown;
+    Color color2 = Colors.brown[800] ?? Colors.brown;
+    if (type == 'fast') { color1 = Colors.greenAccent[400] ?? Colors.greenAccent; color2 = Colors.teal[900] ?? Colors.teal; }
+    else if (type == 'boss') {
+      if (bossType == 'fire') { color1 = Colors.orangeAccent[700] ?? Colors.orangeAccent; color2 = const Color(0xFF6F0000); }
+      else if (bossType == 'electric') { color1 = Colors.cyanAccent[400] ?? Colors.cyanAccent; color2 = const Color(0xFF003050); }
+      else if (bossType == 'acid') { color1 = Colors.greenAccent[400] ?? Colors.greenAccent; color2 = const Color(0xFF004400); }
     }
 
     if (type == 'boss' || visualType == 'poop') {
@@ -753,12 +855,11 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
       final topRect = Rect.fromCenter(center: Offset(center.dx, center.dy - half * 0.32), width: half * 0.85, height: half * 0.42);
       canvas.drawOval(topRect, poopPaint); canvas.drawOval(topRect, strokePaint);
 
-      final double antAngle = sin(timeMs * 0.02) * 0.12;
+      // Antena del boss
       canvas.save();
       canvas.translate(center.dx, center.dy - half * 0.5);
-      canvas.rotate(antAngle);
       canvas.drawLine(Offset.zero, const Offset(0, -9), Paint()..color = Colors.grey[400]!..strokeWidth = 1.5);
-      canvas.drawCircle(const Offset(0, -10), 3.0, Paint()..color = Color.lerp(Colors.greenAccent, Colors.yellowAccent, (sin(timeMs * 0.035) + 1.0) / 2.0)!);
+      canvas.drawCircle(const Offset(0, -10), 3.0, Paint()..color = Colors.greenAccent);
       canvas.restore();
 
       final eyePaint = Paint()..color = type == 'boss' ? Colors.yellowAccent : Colors.redAccent;
@@ -775,8 +876,8 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     } else if (visualType == 'bacteria') {
       final cilioPaint = Paint()..color = Colors.purpleAccent.withAlpha(200);
       for (int i = 0; i < 10; i++) {
-        double angle = (i * 2 * pi / 10) + sin(timeMs * 0.02 + i) * 0.15;
-        double radiusOffset = half * 1.12 + sin(timeMs * 0.03 + i) * 1.5;
+        double angle = i * 2 * pi / 10;
+        double radiusOffset = half * 1.12;
         canvas.drawCircle(Offset(center.dx + cos(angle) * radiusOffset, center.dy + sin(angle) * radiusOffset), 3, cilioPaint);
       }
       canvas.drawCircle(center, half * 0.95, Paint()..shader = ui.Gradient.radial(Offset(center.dx - 2, center.dy - 2), half * 0.95, [Colors.purpleAccent, Colors.purple[900]!]));
@@ -786,8 +887,8 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
       canvas.drawCircle(Offset(center.dx - half * 0.35, center.dy - half * 0.2), 3, Paint()..color = Colors.redAccent);
       canvas.drawCircle(Offset(center.dx + half * 0.35, center.dy - half * 0.2), 3, Paint()..color = Colors.redAccent);
     } else if (visualType == 'alien') {
-      final aliColor1 = (hp < maxHp) ? Colors.orangeAccent : Colors.greenAccent[400]!;
-      final aliColor2 = (hp < maxHp) ? Colors.red[900]! : Colors.green[900]!;
+      final aliColor1 = isDamaged ? Colors.orangeAccent : (Colors.greenAccent[400] ?? Colors.greenAccent);
+      final aliColor2 = isDamaged ? (Colors.red[900] ?? Colors.red) : (Colors.green[900] ?? Colors.green);
       final headPaint = Paint()..shader = ui.Gradient.radial(Offset(center.dx - 2, center.dy - 3), half * 1.05, [aliColor1, aliColor2]);
       final alienPath = Path()
         ..moveTo(center.dx - half * 0.75, center.dy - half * 0.3)
@@ -805,17 +906,6 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
 
       canvas.drawLine(Offset(center.dx, center.dy - half * 0.8), Offset(center.dx, center.dy - half * 1.15), Paint()..color = Colors.grey[400]!..strokeWidth = 1.2);
       canvas.drawCircle(Offset(center.dx, center.dy - half * 1.2), 2.5, Paint()..color = Colors.greenAccent);
-    }
-
-    if (type == 'boss') {
-      final barRect = Rect.fromCenter(center: Offset(center.dx, center.dy - 44), width: 60, height: 6);
-      canvas.drawRRect(RRect.fromRectAndRadius(barRect, const Radius.circular(3)), Paint()..color = Colors.black54);
-      double lifePct = (hp / maxHp).clamp(0.0, 1.0);
-      final lifeRect = Rect.fromLTWH(barRect.left, barRect.top, 60 * lifePct, 6);
-      Color hpColor = Colors.redAccent;
-      if (bossType == 'electric') hpColor = Colors.cyanAccent;
-      if (bossType == 'acid') hpColor = Colors.greenAccent[400]!;
-      canvas.drawRRect(RRect.fromRectAndRadius(lifeRect, const Radius.circular(3)), Paint()..color = hpColor);
     }
   }
 }
@@ -883,14 +973,24 @@ class FloatingTextComponent extends PositionComponent {
   final Color color;
   final double fontSize;
   double life = 1.0;
+  double targetAngle = 0.0;
 
-  FloatingTextComponent({required this.text, required this.color, required this.fontSize});
+  FloatingTextComponent({required this.text, required this.color, required this.fontSize}) {
+    anchor = Anchor.center;
+    targetAngle = (Random().nextDouble() - 0.5) * 0.3;
+    angle = targetAngle;
+  }
 
   @override
   void update(double dt) {
     super.update(dt);
     life -= dt;
-    position.y -= dt * 50;
+    position.y -= dt * 45;
+    angle = ui.lerpDouble(angle, targetAngle, dt * 5.0) ?? angle;
+
+    double scaleVal = life > 0.8 ? 1.0 + (life - 0.8) * 1.8 : 1.0;
+    scale = Vector2.all(scaleVal);
+
     if (life <= 0) removeFromParent();
   }
 
@@ -926,7 +1026,6 @@ class GameParticleComponent extends PositionComponent with HasGameReference<Poop
   }
 
   void _disableAndPool() {
-    game.inactiveParticles.add(this);
     removeFromParent();
   }
 
