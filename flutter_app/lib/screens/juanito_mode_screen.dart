@@ -348,7 +348,9 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('¡Power-up activado para la siguiente partida! 🚀 -$cost Kakadólares.'),
+        content: Text(isPassive
+            ? '¡Mejora permanente activada! 🚀 -$cost Kakadólares.'
+            : '¡Power-up activado para tu próxima partida! 🚀 -$cost Kakadólares.'),
         backgroundColor: Colors.blue[700],
       ),
     );
@@ -356,10 +358,38 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   void _selectGame(ActiveGame game) {
     HapticFeedback.mediumImpact();
+    _consumeOneTimePowerups(game);
     setState(() {
       _activeGame = game;
     });
     _updateMusicPlayback();
+    // Al volver al menú se refresca el perfil: los flags de power-ups gastados
+    // vuelven a false y el contador de K$ se actualiza
+    if (game == ActiveGame.selectMenu) {
+      _loadZenProfile();
+    }
+  }
+
+  /// Los power-ups de un solo uso se gastan en la base de datos al entrar a un
+  /// juego que los usa. Los flags locales (_hasX) se mantienen en true durante
+  /// la sesión de juego para que los reintentos ("Reiniciar") sigan contando
+  /// con la mejora; se refrescan al volver al menú.
+  void _consumeOneTimePowerups(ActiveGame game) {
+    final user = _authService.currentUser;
+    if (user == null) return;
+
+    final toConsume = <String>[];
+    final usesShield = game == ActiveGame.cacaCatch ||
+        game == ActiveGame.flappyPoop ||
+        game == ActiveGame.toiletJump;
+    if (_hasInitialSoapShield && usesShield) toConsume.add('shield');
+    if (_hasInitialSpring && game == ActiveGame.toiletJump) toConsume.add('spring');
+    if (_hasFeverMagnet && game == ActiveGame.cacaCatch) toConsume.add('magnet');
+    if (_hasExtraLife && game == ActiveGame.cacaCatch) toConsume.add('life');
+
+    for (final id in toConsume) {
+      _dbService.consumePowerup(user.uid, id);
+    }
   }
 
 
@@ -593,6 +623,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
               equippedSkin: _equippedSkin,
               hasTripleShot: false,
               hasBurstShot: false,
+              hasLifeInsurance: _hasLifeInsurance,
               activeBuffCategory: _activeBuffCategory,
               onGameOver: (score) => _selectGame(ActiveGame.selectMenu),
               onAddKcoins: (coins) {
@@ -903,7 +934,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '🧼',
         'name': 'Escudo Burbuja',
         'cost': 30,
-        'description': 'Caca Catch: Escudo de jabón por 4s. Toilet Jump/Flappy: Escudo protector inicial.',
+        'description': 'Un uso: Caca Catch/Flappy: escudo que absorbe un golpe. Toilet Jump: despegue con jetpack.',
         'games': ['Caca Catch', 'Flappy Poop', 'Toilet Jump'],
       },
       {
@@ -911,7 +942,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '🌀',
         'name': 'Súper Impulso',
         'cost': 40,
-        'description': 'Toilet Jump: Salto inicial gigante para subir a las nubes rápidamente.',
+        'description': 'Un uso: Toilet Jump: salto inicial gigante para subir a las nubes rápidamente.',
         'games': ['Toilet Jump'],
       },
       {
@@ -919,7 +950,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '🧲',
         'name': 'Imán de Caca',
         'cost': 50,
-        'description': 'Caca Catch: Atrae todas las cacas, estrellas y rollos automáticamente.',
+        'description': 'Un uso: Caca Catch: imán durante la fiebre que atrae cacas, estrellas y rollos.',
         'games': ['Caca Catch'],
       },
       {
@@ -927,7 +958,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '❤️',
         'name': 'Vida Extra',
         'cost': 60,
-        'description': 'Caca Catch: Inicias con 4 vidas en lugar de 3.',
+        'description': 'Un uso: Caca Catch: inicias con 4 vidas en lugar de 3.',
         'games': ['Caca Catch'],
       },
       {
@@ -935,7 +966,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '🧲✨',
         'name': 'Imán Pasivo',
         'cost': 150,
-        'description': 'Caca Catch: Atrae cacas permanentemente más rápido y con mayor rango.',
+        'description': 'Permanente: Caca Catch: atrae cacas siempre, más rápido y con mayor rango.',
         'games': ['Caca Catch'],
       },
       {
@@ -943,7 +974,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
         'icon': '🛡️',
         'name': 'Seguro de Vida',
         'cost': 250,
-        'description': 'Flappy/Invaders: Inicias siempre con un escudo protector o vida extra gratis.',
+        'description': 'Permanente: Flappy y Poop Invaders: empiezas cada partida con un escudo protector.',
         'games': ['Flappy Poop', 'Poop Invaders'],
       },
     ];

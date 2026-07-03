@@ -51,9 +51,11 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     background = ParallaxBackground();
     add(background);
 
-    // Añadir tuberías iniciales
+    // Tubería inicial. El spawner dinámico coloca las siguientes en size.x + 50,
+    // así que el acumulador arranca en -50 para que la separación sea exactamente
+    // pipeSpawnDistance también entre la inicial y la primera dinámica.
     _spawnPipe(size.x + 100);
-    _spawnPipe(size.x + 100 + pipeSpawnDistance);
+    distanceSinceLastPipe = -50.0;
 
     // Añadir jugador
     bool hasShield = hasInitialSoapShield || hasLifeInsurance || activeBuffCategory == AchievementCategory.games;
@@ -270,9 +272,10 @@ class PoopPlayer extends PositionComponent with HasGameReference<FlappyPoopFlame
 
 class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGame>, CollisionCallbacks {
   double gapY;
+  late final double baseGapY;
   final double gapHeight;
   final bool hasStar;
-  
+
   bool passed = false;
   bool starCollected = false;
   double time = 0;
@@ -282,6 +285,7 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
   CircleHitbox? starHitbox;
 
   PipePair({required this.gapY, required this.gapHeight, required this.hasStar}) {
+    baseGapY = gapY;
     width = 50.0;
   }
 
@@ -309,10 +313,12 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
     
     position.x -= game.pipeSpeed * dt;
     
-    // Movimiento vertical en niveles altos
+    // Movimiento vertical en niveles altos: oscila alrededor del hueco original
+    // de cada tubería (sin(0) = 0, así la transición de nivel no teletransporta huecos)
     if (game.level >= 2) {
       time += dt * (1.2 + game.level * 0.2);
-      gapY = 80.0 + (game.size.y - 250.0) / 2 + sin(time) * (20.0 + game.level * 6.0); // Simple onda
+      final amplitude = 20.0 + game.level * 6.0;
+      gapY = (baseGapY + sin(time) * amplitude).clamp(40.0, game.size.y - gapHeight - 40.0);
       
       // Actualizar hitboxes
       topHitbox.size.y = gapY;
@@ -346,6 +352,10 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
         if (other.position.distanceTo(starCenter) < 26.0) {
           hitStar = true;
           starCollected = true;
+          // Sin esto, la hitbox invisible de la estrella ya recogida contaría
+          // como choque con tubería si se vuelve a tocar
+          starHitbox!.removeFromParent();
+          starHitbox = null;
           game.handleStar();
         }
       }

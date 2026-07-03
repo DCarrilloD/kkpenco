@@ -33,6 +33,9 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   int score = 0;
   int level = 1;
   int coinsEarned = 0;
+  // Puntos extra (bacterias pisadas) que se suman al score por altura;
+  // sin acumularlos aparte, la asignación score = altura los borraría
+  int bonusScore = 0;
 
   double maxHeightReached = 0;
   double highestPlatformY = 0;
@@ -129,7 +132,7 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     if (player.position.y < maxHeightReached) {
       maxHeightReached = player.position.y;
       
-      int currentHeightScore = (-maxHeightReached ~/ 50).toInt() + 10;
+      int currentHeightScore = (-maxHeightReached ~/ 50).toInt() + 10 + bonusScore;
       if (currentHeightScore > score) {
         score = currentHeightScore;
         onScoreChanged(score);
@@ -219,8 +222,8 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     GameAudio.play('hit.wav', volume: 0.8);
     pauseEngine();
     HapticFeedback.vibrate();
-    // Bonus de altura: 1 K$ por cada 100 puntos de altura alcanzada
-    coinsEarned += score ~/ 100;
+    // Bonus de altura: 1 K$ por cada 50 puntos de altura alcanzada
+    coinsEarned += score ~/ 50;
     onGameOver(score, coinsEarned);
   }
 
@@ -452,6 +455,11 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
           
           double jumpMultiplier = game.activeBuffCategory == AchievementCategory.stats ? 1.10 : 1.0;
 
+          // Tocar cualquier plataforma repone el doble salto — también las frágiles,
+          // porque romper una suele obligar a usarlo justo después (hueco de 130px
+          // frente a los ~112px del salto normal)
+          other.availableDoubleJumps = 1;
+
           if (type == PlatformType.fragile) {
             broken = true;
             GameAudio.play('hit.wav', volume: 0.4);
@@ -486,7 +494,6 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
               other.activateBalloon();
             }
           }
-          other.availableDoubleJumps = 1;
         }
       }
     }
@@ -574,7 +581,9 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
         isDead = true;
         other.velocityY = -300.0;
         other.availableDoubleJumps = 1;
+        game.bonusScore += 100;
         game.score += 100;
+        game.onScoreChanged(game.score);
         game.coinsEarned += 5;
         game.addFloatingText('+100 · 5 K\$', position.clone(), Colors.orangeAccent);
         HapticFeedback.mediumImpact();

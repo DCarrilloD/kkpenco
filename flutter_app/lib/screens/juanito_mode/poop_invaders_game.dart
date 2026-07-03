@@ -8,6 +8,7 @@ class PoopInvadersGame extends StatefulWidget {
   final String equippedSkin;
   final bool hasTripleShot;
   final bool hasBurstShot;
+  final bool hasLifeInsurance;
   final Function(int) onGameOver;
   final Function(int) onAddKcoins;
   final Function(int) onSaveHighScore;
@@ -19,6 +20,7 @@ class PoopInvadersGame extends StatefulWidget {
     required this.equippedSkin,
     required this.hasTripleShot,
     required this.hasBurstShot,
+    this.hasLifeInsurance = false,
     required this.onGameOver,
     required this.onAddKcoins,
     required this.onSaveHighScore,
@@ -50,6 +52,7 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
       equippedSkin: widget.equippedSkin,
       hasInitialTripleShot: widget.hasTripleShot,
       hasInitialBurstShot: widget.hasBurstShot,
+      hasInitialShield: widget.hasLifeInsurance,
       activeBuffCategory: widget.activeBuffCategory,
       onGameOver: (finalScore) {
         Future.microtask(() {

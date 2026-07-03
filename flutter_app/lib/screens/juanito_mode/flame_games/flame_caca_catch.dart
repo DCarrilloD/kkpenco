@@ -198,7 +198,7 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
 
       score += points * comboMultiplier;
       onScoreChanged(score);
-      addFloatingText("+$points", item.position, Colors.greenAccent);
+      addFloatingText("+${points * comboMultiplier}", item.position, Colors.greenAccent);
 
       // Progresión de nivel por puntuación
       final newLevel = 1 + score ~/ 200;
@@ -210,22 +210,25 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
 
       if (item.type == CatchItemType.poop || item.type == CatchItemType.goldenPoop) {
         poopsCaughtConsecutively++;
-        if (poopsCaughtConsecutively % 10 == 0) {
+        if (poopsCaughtConsecutively % 10 == 0 && comboMultiplier < 5) {
           comboMultiplier++;
           addFloatingText("¡Combo x$comboMultiplier!", item.position, Colors.orangeAccent);
         }
-        
+
         // Activar fiebre
         if (poopsCaughtConsecutively > 15 && !isFeverMode) {
           isFeverMode = true;
+          // La racha se consume al activar la fiebre: hay que ganársela de nuevo
+          // (si no, una sola caca tras la fiebre la reactivaría en bucle infinito)
+          poopsCaughtConsecutively = 0;
           feverTimeRemaining = 5.0;
-          catchSpeed = 300.0; // Caen más rápido
+          catchSpeed = (150.0 + level * 20) * 1.5; // Caen más rápido que a velocidad normal del nivel
           addFloatingText("¡FIEBRE!", toilet.position, Colors.amber, size: 24);
         }
       }
       
-      // K-Coins por cada cosa atrapada
-      if (item.type == CatchItemType.goldenPoop) onAddKcoins(5);
+      // K-Coins por cada cosa atrapada (la dorada abunda en fiebre; con 5 K$ era una imprenta)
+      if (item.type == CatchItemType.goldenPoop) onAddKcoins(2);
       if (item.type == CatchItemType.poop && Random().nextDouble() < 0.1) onAddKcoins(1);
     }
   }

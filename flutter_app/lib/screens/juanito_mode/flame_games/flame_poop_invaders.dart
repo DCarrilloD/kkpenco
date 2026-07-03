@@ -15,6 +15,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   final String equippedSkin;
   final bool hasInitialTripleShot;
   final bool hasInitialBurstShot;
+  final bool hasInitialShield;
   final AchievementCategory? activeBuffCategory;
 
   final Function(int) onGameOver;
@@ -24,15 +25,12 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   final Function(int) onWaveChanged;
   final Function(double) onTimeChanged;
 
-  // Object Pools para rendimiento extremo
-  final List<LaserComponent> inactiveLasers = [];
-  final List<GameParticleComponent> inactiveParticles = [];
-
   late PlayerShip player;
   late DeepSpaceBackground sky;
-  
+
   int score = 0;
   int lives = 5;
+  int maxLives = 5;
   int wave = 1;
   double gameTimeSeconds = 0.0;
   
@@ -50,6 +48,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     required this.equippedSkin,
     required this.hasInitialTripleShot,
     required this.hasInitialBurstShot,
+    this.hasInitialShield = false,
     required this.activeBuffCategory,
     required this.onGameOver,
     required this.onAddKcoins,
@@ -69,7 +68,10 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
       'hit.wav',
     ]);
     
-    if (activeBuffCategory == AchievementCategory.games) lives++;
+    if (activeBuffCategory == AchievementCategory.games) {
+      lives++;
+      maxLives++; // El corazón 💖 no debe restar la vida extra del buff al hacer clamp
+    }
 
     // Background
     sky = DeepSpaceBackground();
@@ -81,6 +83,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
       startTriple: hasInitialTripleShot,
       startBurst: hasInitialBurstShot,
     );
+    player.hasShield = hasInitialShield; // Seguro de Vida de la tienda
     player.position = Vector2(size.x / 2, size.y * 0.86);
     add(player);
 
@@ -113,7 +116,9 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     if (!isBossActive) {
       bool hasEnemies = children.whereType<InvaderEnemy>().isNotEmpty;
       if (!hasEnemies) {
-        onAddKcoins(wave * 20);
+        // Recompensa plana con crecimiento suave: wave*20 acumulaba ~1100 K$
+        // en 10 oleadas y rompía la economía frente al resto de juegos
+        onAddKcoins(10 + wave * 2);
         wave++;
         onWaveChanged(wave);
         _spawnWave();
@@ -542,7 +547,7 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
       game.spawnParticles(position.clone(), '✨', 1, speed: 0.3);
     }
 
-    if (position.y < -50 || position.y > game.size.y + 50 || position.x < -50 || position.x > game.size.y + 50) {
+    if (position.y < -50 || position.y > game.size.y + 50 || position.x < -50 || position.x > game.size.x + 50) {
       _disableAndPool();
     }
   }
@@ -951,7 +956,7 @@ class PowerupItem extends PositionComponent with HasGameReference<PoopInvadersFl
         other.burstShotTime = 6.0;
         game.addFloatingText('¡DISPARO RÁPIDO! ⚡', other.position.clone()..y -= 30, Colors.cyanAccent);
       } else if (type == 'life') {
-        game.lives = (game.lives + 1).clamp(0, 5);
+        game.lives = (game.lives + 1).clamp(0, game.maxLives);
         game.onLivesChanged(game.lives);
         game.addFloatingText('+1 VIDA 💖', other.position.clone()..y -= 30, Colors.redAccent);
       } else {

@@ -1192,6 +1192,23 @@ class DatabaseService {
     }
   }
 
+  /// Gasta un power-up de un solo uso (shield/spring/magnet/life) al empezar
+  /// una partida que lo aprovecha. Los pasivos no se consumen nunca.
+  Future<void> consumePowerup(String userId, String powerupId) async {
+    try {
+      if (useMockData) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('zen_powerup_${powerupId}_$userId', false);
+        return;
+      }
+      await _db.collection('users').doc(userId).set({
+        'activePowerups': {powerupId: false},
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Error al consumir powerup: $e');
+    }
+  }
+
   Future<void> equipSkin(String userId, String skin) async {
     try {
       if (useMockData) {
