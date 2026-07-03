@@ -180,8 +180,12 @@ class ParallaxBackground extends PositionComponent with HasGameReference<FlappyP
 
     // 4. Malla/Grid de fondo
     final gridPaint = Paint()..color = Colors.white.withAlpha(12)..strokeWidth = 0.5;
-    for (double i = 0; i < game.size.x; i += 40) canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
-    for (double j = 0; j < game.size.y; j += 40) canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    for (double i = 0; i < game.size.x; i += 40) {
+      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
+    }
+    for (double j = 0; j < game.size.y; j += 40) {
+      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    }
   }
 }
 
@@ -308,7 +312,6 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
     // Movimiento vertical en niveles altos
     if (game.level >= 2) {
       time += dt * (1.2 + game.level * 0.2);
-      double oldGapY = gapY;
       gapY = 80.0 + (game.size.y - 250.0) / 2 + sin(time) * (20.0 + game.level * 6.0); // Simple onda
       
       // Actualizar hitboxes

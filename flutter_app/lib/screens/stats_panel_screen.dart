@@ -815,24 +815,24 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         ],
       ),
       body: _isLoading
-          ? SingleChildScrollView(
-              padding: const EdgeInsets.all(16.0),
+          ? const SingleChildScrollView(
+              padding: EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const ShimmerLoading(width: double.infinity, height: 180, borderRadius: 20),
-                  const SizedBox(height: 20),
+                  ShimmerLoading(width: double.infinity, height: 180, borderRadius: 20),
+                  SizedBox(height: 20),
                   Row(
-                    children: const [
+                    children: [
                       Expanded(child: ShimmerLoading(width: double.infinity, height: 120, borderRadius: 16)),
                       SizedBox(width: 12),
                       Expanded(child: ShimmerLoading(width: double.infinity, height: 120, borderRadius: 16)),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  const ShimmerLoading(width: double.infinity, height: 260, borderRadius: 16),
-                  const SizedBox(height: 20),
-                  const ShimmerLoading(width: double.infinity, height: 200, borderRadius: 16),
+                  SizedBox(height: 20),
+                  ShimmerLoading(width: double.infinity, height: 260, borderRadius: 16),
+                  SizedBox(height: 20),
+                  ShimmerLoading(width: double.infinity, height: 200, borderRadius: 16),
                 ],
               ),
             )

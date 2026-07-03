@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flame/game.dart';
+import 'flame_game_host.dart';
 import 'flame_games/flame_poop_invaders.dart';
-import 'in_game_overlay.dart';
 import '../../models/achievement.dart';
-import '../juanito_mode_screen.dart';
 
 class PoopInvadersGame extends StatefulWidget {
   final int highScore;
@@ -38,7 +35,7 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
   int _score = 0;
   int _lives = 5;
   int _wave = 1;
-  double _gameTimeSeconds = 0.0;
+  int _gameTimeSeconds = 0;
   bool _isPaused = false;
   bool _isGameOver = false;
 
@@ -57,10 +54,10 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
       onGameOver: (finalScore) {
         Future.microtask(() {
           if (!mounted) return;
+          widget.onSaveHighScore(finalScore);
           setState(() {
             _isGameOver = true;
             _score = finalScore;
-            widget.onSaveHighScore(_score);
           });
         });
       },
@@ -68,33 +65,28 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
       onScoreChanged: (newScore) {
         Future.microtask(() {
           if (!mounted) return;
-          setState(() {
-            _score = newScore;
-          });
+          setState(() => _score = newScore);
         });
       },
       onLivesChanged: (newLives) {
         Future.microtask(() {
           if (!mounted) return;
-          setState(() {
-            _lives = newLives;
-          });
+          setState(() => _lives = newLives);
         });
       },
       onWaveChanged: (newWave) {
         Future.microtask(() {
           if (!mounted) return;
-          setState(() {
-            _wave = newWave;
-          });
+          setState(() => _wave = newWave);
         });
       },
       onTimeChanged: (newTime) {
+        // Se dispara cada frame: solo reconstruir cuando cambia el segundo entero
+        final seconds = newTime.toInt();
+        if (seconds == _gameTimeSeconds) return;
         Future.microtask(() {
           if (!mounted) return;
-          setState(() {
-            _gameTimeSeconds = newTime;
-          });
+          setState(() => _gameTimeSeconds = seconds);
         });
       },
     );
@@ -114,119 +106,55 @@ class _PoopInvadersGameState extends State<PoopInvadersGame> {
     widget.onGameOver(_score);
   }
 
+  void _restartGame() {
+    setState(() {
+      _isGameOver = false;
+      _isPaused = false;
+      _score = 0;
+      _lives = 5;
+      _wave = 1;
+      _gameTimeSeconds = 0;
+      _initFlameGame();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('PUNTUACIÓN: $_score', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
-            const Text('POOP INVADERS 👽', style: TextStyle(color: Colors.greenAccent, fontSize: 11, fontWeight: FontWeight.bold)),
-            Row(
-              children: [
-                IconButton(
-                  icon: Icon(
-                    JuanitoModeScreen.isMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                    color: Colors.grey,
-                    size: 18,
-                  ),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    setState(() {
-                      JuanitoModeScreen.toggleMute();
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: Icon(_isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded, color: Colors.grey, size: 18),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    if (!_isGameOver) {
-                      _isPaused ? _resumeGame() : _pauseGame();
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(Icons.logout_rounded, color: Colors.grey, size: 18),
-                  onPressed: _quitGame,
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Expanded(
-          child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: const Color(0xFF030712), // Espacio profundo
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.greenAccent.withAlpha(40)),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                children: [
-                  // 1. Capa base: Flame Game Widget
-                  GameWidget(
-                    game: _flameGame,
-                  ),
-
-                  // 2. HUD Superior Flotante
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    right: 12,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Izquierda: Tiempo
-                        Text(
-                          'TIEMPO: ${_gameTimeSeconds.toInt()}s',
-                          style: TextStyle(color: Colors.amber[700], fontSize: 12, fontWeight: FontWeight.bold, shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
-                        ),
-                        // Centro: Oleada
-                        Text(
-                          'OLEADA: $_wave',
-                          style: TextStyle(color: Colors.greenAccent[400], fontSize: 14, fontWeight: FontWeight.bold, shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
-                        ),
-                        // Derecha: Vidas
-                        Text(
-                          '❤️' * _lives,
-                          style: const TextStyle(fontSize: 14, shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // 3. Menús de Overlay (Pausa y Game Over)
-                  if (_isPaused || _isGameOver)
-                    InGameOverlay(
-                      showPause: _isPaused,
-                      showGameOver: _isGameOver,
-                      title: _isGameOver ? '¡FIN DEL JUEGO!' : 'PAUSA',
-                      record: widget.highScore,
-                      accentColor: Colors.greenAccent,
-                      onRestart: () {
-                        setState(() {
-                          _isGameOver = false;
-                          _isPaused = false;
-                          _score = 0;
-                          _lives = 5;
-                          _wave = 1;
-                          _gameTimeSeconds = 0.0;
-                          _initFlameGame();
-                        });
-                      },
-                      onExit: _quitGame,
-                      onResume: _resumeGame,
-                    ),
-                ],
+    return FlameGameHost(
+      game: _flameGame,
+      title: 'POOP INVADERS 👽',
+      accentColor: Colors.greenAccent,
+      backgroundColor: const Color(0xFF030712),
+      score: _score,
+      record: widget.highScore,
+      isPaused: _isPaused,
+      isGameOver: _isGameOver,
+      onPause: _pauseGame,
+      onResume: _resumeGame,
+      onRestart: _restartGame,
+      onQuit: _quitGame,
+      hudChildren: [
+        Positioned(
+          top: 12,
+          left: 12,
+          right: 12,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'TIEMPO: ${_gameTimeSeconds}s',
+                style: TextStyle(color: Colors.amber[700], fontSize: 12, fontWeight: FontWeight.bold, shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
               ),
-            ),
+              Text(
+                'OLEADA: $_wave',
+                style: TextStyle(color: Colors.greenAccent[400], fontSize: 14, fontWeight: FontWeight.bold, shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
+              ),
+              Text(
+                '❤️' * _lives,
+                style: const TextStyle(fontSize: 14, shadows: [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(2, 2))]),
+              ),
+            ],
           ),
         ),
       ],

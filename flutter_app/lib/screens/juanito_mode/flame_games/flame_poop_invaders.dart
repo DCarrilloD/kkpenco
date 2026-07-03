@@ -171,9 +171,11 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
       maxHp = (maxHp * 0.85).toInt();
     }
 
-    if (bossNumber == 2) bType = 'electric';
-    else if (bossNumber == 3) bType = 'acid';
-    else {
+    if (bossNumber == 2) {
+      bType = 'electric';
+    } else if (bossNumber == 3) {
+      bType = 'acid';
+    } else {
       final types = ['fire', 'electric', 'acid'];
       bType = types[(bossNumber - 1) % 3];
     }
@@ -310,8 +312,12 @@ class DeepSpaceBackground extends PositionComponent with HasGameReference<PoopIn
 
     // Neon grid
     final gridPaint = Paint()..color = Colors.greenAccent.withAlpha(8)..strokeWidth = 0.5;
-    for (double i = 0; i < game.size.x; i += 40) canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
-    for (double j = 0; j < game.size.y; j += 40) canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    for (double i = 0; i < game.size.x; i += 40) {
+      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
+    }
+    for (double j = 0; j < game.size.y; j += 40) {
+      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    }
   }
 }
 
@@ -343,7 +349,7 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
   @override
   Future<void> onLoad() async {
     cachedShipImage = await SpriteRasterizer.rasterize(100, 100, (canvas) {
-      final center = const Offset(50, 50);
+      const center = Offset(50, 50);
       _drawToiletVectorStatic(canvas, center, 60);
       PoopSkinDrawer.drawPoop(canvas, Offset(center.dx, center.dy - 11), 32, skin: skin);
     });
@@ -517,8 +523,9 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
     }
 
     if (!fromPlayer) {
-      if (type == 'lightning') vx = sin(DateTime.now().millisecondsSinceEpoch * 0.02) * 250.0;
-      else if (type == 'acid' && position.y >= game.size.y * 0.5) {
+      if (type == 'lightning') {
+        vx = sin(DateTime.now().millisecondsSinceEpoch * 0.02) * 250.0;
+      } else if (type == 'acid' && position.y >= game.size.y * 0.5) {
         // Divide into 2
         game.spawnLaser(pos: position.clone(), vy: 200.0, vx: -100.0, fromPlayer: false, type: 'acid_sub');
         game.spawnLaser(pos: position.clone(), vy: 200.0, vx: 100.0, fromPlayer: false, type: 'acid_sub');
@@ -566,9 +573,13 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
   void _renderLaser(Canvas canvas, Offset lCenter) {
     Color laserColor = fromPlayer ? Colors.cyanAccent : Colors.purpleAccent;
     if (!fromPlayer) {
-      if (type == 'meteor') laserColor = Colors.orangeAccent;
-      else if (type == 'lightning') laserColor = Colors.cyanAccent;
-      else if (type == 'acid' || type == 'acid_sub') laserColor = Colors.greenAccent[400]!;
+      if (type == 'meteor') {
+        laserColor = Colors.orangeAccent;
+      } else if (type == 'lightning') {
+        laserColor = Colors.cyanAccent;
+      } else if (type == 'acid' || type == 'acid_sub') {
+        laserColor = Colors.greenAccent[400]!;
+      }
     }
 
     final glowPaint = Paint()..color = laserColor.withAlpha(100)..maskFilter = const MaskFilter.blur(BlurStyle.solid, 4);

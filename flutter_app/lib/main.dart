@@ -36,9 +36,7 @@ Future<void> interactiveCallback(Uri? uri) async {
   }
 
   User? user = FirebaseAuth.instance.currentUser;
-  if (user == null) {
-    user = await FirebaseAuth.instance.authStateChanges().first;
-  }
+  user ??= await FirebaseAuth.instance.authStateChanges().first;
   if (user == null) return;
 
   Consistency consistency;
@@ -198,9 +196,14 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
+class _MainNavigationScreenState extends State<MainNavigationScreen> with SingleTickerProviderStateMixin {
   int _currentIndex = 0;
   int _previousIndex = 0;
+  late final AnimationController _tabTransitionController;
+
+  // Solo las pestañas visitadas se montan; una vez montadas, el IndexedStack
+  // las mantiene vivas (estado y streams persisten entre cambios de pestaña).
+  final Set<int> _builtTabs = {0};
 
   final List<Widget> _screens = const [
     TrackerScreen(),
@@ -208,6 +211,22 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     ChatScreen(),
     ProfileScreen(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabTransitionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 320),
+      value: 1.0,
+    );
+  }
+
+  @override
+  void dispose() {
+    _tabTransitionController.dispose();
+    super.dispose();
+  }
 
   Widget _buildNavItem({
     required int index,
@@ -219,10 +238,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
+          if (_currentIndex == index) return;
           setState(() {
             _previousIndex = _currentIndex;
             _currentIndex = index;
+            _builtTabs.add(index);
           });
+          _tabTransitionController.forward(from: 0.0);
         },
         behavior: HitTestBehavior.opaque,
         child: Padding(
@@ -262,60 +284,32 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 320),
-        reverseDuration: const Duration(milliseconds: 320),
-        switchInCurve: Curves.easeInOutCubic,
-        switchOutCurve: Curves.easeInOutCubic,
-        layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
-          return Stack(
-            children: <Widget>[
-              ...previousChildren,
-              if (currentChild != null) currentChild,
-            ],
-          );
-        },
-        transitionBuilder: (Widget child, Animation<double> animation) {
-          final isEntering = child.key == ValueKey<int>(_currentIndex);
+      body: AnimatedBuilder(
+        animation: _tabTransitionController,
+        builder: (context, child) {
+          // Escala premium sutil tridimensional (Zoom 3D refinado del 3%) sobre la
+          // pestaña entrante. El IndexedStack mantiene las pantallas montadas, así
+          // que cambiar de pestaña no re-suscribe streams ni relee Firestore.
+          final t = Curves.easeOutCubic.transform(_tabTransitionController.value);
           final direction = _currentIndex >= _previousIndex ? 1.0 : -1.0;
-          
-          // Escala premium sutil tridimensional (Zoom 3D refinado del 3%)
-          final double beginScale = isEntering 
-              ? (direction > 0 ? 1.03 : 0.97) 
-              : 1.0;
-          final double endScale = isEntering 
-              ? 1.0 
-              : (direction > 0 ? 0.97 : 1.03);
+          final double beginScale = direction > 0 ? 1.03 : 0.97;
+          final double scale = beginScale + (1.0 - beginScale) * t;
+          final double opacity = (0.35 + 0.65 * t).clamp(0.0, 1.0);
 
-          // Curva personalizada desacoplada para la escala (entrada suave, salida limpia)
-          final scaleAnimation = Tween<double>(
-            begin: beginScale,
-            end: endScale,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: isEntering ? Curves.easeOutCubic : Curves.easeInCubic,
-          ));
-
-          // Curva de opacidad rápida para evitar superposición densa de pantallas
-          final fadeAnimation = Tween<double>(
-            begin: isEntering ? 0.0 : 1.0,
-            end: isEntering ? 1.0 : 0.0,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: isEntering ? Curves.easeOut : Curves.easeIn,
-          ));
-          
-          return ScaleTransition(
-            scale: scaleAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
+          return Opacity(
+            opacity: opacity,
+            child: Transform.scale(
+              scale: scale,
               child: child,
             ),
           );
         },
-        child: KeyedSubtree(
-          key: ValueKey<int>(_currentIndex),
-          child: _screens[_currentIndex],
+        child: IndexedStack(
+          index: _currentIndex,
+          children: [
+            for (int i = 0; i < _screens.length; i++)
+              _builtTabs.contains(i) ? _screens[i] : const SizedBox.shrink(),
+          ],
         ),
       ),
       bottomNavigationBar: Container(

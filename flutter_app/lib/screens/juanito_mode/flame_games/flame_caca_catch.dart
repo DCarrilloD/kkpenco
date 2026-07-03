@@ -30,8 +30,7 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
   final Function(bool, double) onFeverChanged; // isFeverMode, progress (0 a 1)
 
   late ToiletPlayer toilet;
-  
-  double catchSpawnProb = 0.05;
+
   double catchSpeed = 150.0; // Píxeles por segundo
   
   int score = 0;
@@ -86,14 +85,12 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
   void update(double dt) {
     super.update(dt);
     
-    // Lógica de aparición de items
+    // Lógica de aparición de items (un ítem por intervalo, más rápido con el nivel)
     timeSinceLastSpawn += dt;
-    double spawnRate = isSodaFrenzy ? 0.15 : (0.5 - (level * 0.05).clamp(0.0, 0.3));
-    
+    double spawnRate = isSodaFrenzy ? 0.15 : (0.55 - (level * 0.05).clamp(0.0, 0.3));
+
     if (timeSinceLastSpawn > spawnRate) {
-      if (Random().nextDouble() < catchSpawnProb * (isSodaFrenzy ? 3 : 1)) {
-        _spawnItem();
-      }
+      _spawnItem();
       timeSinceLastSpawn = 0;
     }
 
@@ -125,17 +122,29 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
     double r = rand.nextDouble();
     
     if (isFeverMode) {
-      if (r < 0.6) type = CatchItemType.goldenPoop;
-      else if (r < 0.9) type = CatchItemType.poop;
-      else type = CatchItemType.soda;
+      if (r < 0.6) {
+        type = CatchItemType.goldenPoop;
+      } else if (r < 0.9) {
+        type = CatchItemType.poop;
+      } else {
+        type = CatchItemType.soda;
+      }
     } else {
-      if (r < 0.50) type = CatchItemType.poop;
-      else if (r < 0.70) type = CatchItemType.paper;
-      else if (r < 0.85) type = CatchItemType.bacteria;
-      else if (r < 0.90) type = CatchItemType.soap;
-      else if (r < 0.95) type = CatchItemType.goldenPoop;
-      else if (r < 0.98) type = CatchItemType.soda;
-      else type = CatchItemType.chlorineBomb;
+      if (r < 0.50) {
+        type = CatchItemType.poop;
+      } else if (r < 0.70) {
+        type = CatchItemType.paper;
+      } else if (r < 0.85) {
+        type = CatchItemType.bacteria;
+      } else if (r < 0.90) {
+        type = CatchItemType.soap;
+      } else if (r < 0.95) {
+        type = CatchItemType.goldenPoop;
+      } else if (r < 0.98) {
+        type = CatchItemType.soda;
+      } else {
+        type = CatchItemType.chlorineBomb;
+      }
     }
 
     final item = FallingItem(type: type, speed: catchSpeed, skin: equippedSkin);
@@ -191,6 +200,14 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
       onScoreChanged(score);
       addFloatingText("+$points", item.position, Colors.greenAccent);
 
+      // Progresión de nivel por puntuación
+      final newLevel = 1 + score ~/ 200;
+      if (newLevel != level) {
+        level = newLevel;
+        if (!isFeverMode) catchSpeed = 150.0 + (level * 20);
+        addFloatingText("¡NIVEL $level!", toilet.position.clone()..sub(Vector2(0, 50)), Colors.purpleAccent, size: 22);
+      }
+
       if (item.type == CatchItemType.poop || item.type == CatchItemType.goldenPoop) {
         poopsCaughtConsecutively++;
         if (poopsCaughtConsecutively % 10 == 0) {
@@ -220,30 +237,30 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
 
 // --- COMPONENTES ---
 
-class BackgroundComponent extends PositionComponent with HasGameRef<CacaCatchFlameGame> {
+class BackgroundComponent extends PositionComponent with HasGameReference<CacaCatchFlameGame> {
   @override
   void render(Canvas canvas) {
     Color bgColor = const Color(0xFF0D0D0D); // Negro
-    if (gameRef.level == 2) bgColor = const Color(0xFF0F172A);
-    if (gameRef.level == 3) bgColor = const Color(0xFF1E1B4B);
-    if (gameRef.level >= 4) bgColor = const Color(0xFF450A0A);
+    if (game.level == 2) bgColor = const Color(0xFF0F172A);
+    if (game.level == 3) bgColor = const Color(0xFF1E1B4B);
+    if (game.level >= 4) bgColor = const Color(0xFF450A0A);
     
-    canvas.drawRect(Rect.fromLTWH(0, 0, gameRef.size.x, gameRef.size.y), Paint()..color = bgColor);
+    canvas.drawRect(Rect.fromLTWH(0, 0, game.size.x, game.size.y), Paint()..color = bgColor);
 
     // Cuadrícula
     final gridPaint = Paint()
-      ..color = gameRef.isFeverMode ? Colors.amber.withAlpha(20) : Colors.white.withAlpha(12)
+      ..color = game.isFeverMode ? Colors.amber.withAlpha(20) : Colors.white.withAlpha(12)
       ..strokeWidth = 0.5;
-    for (double i = 0; i < gameRef.size.x; i += 40) {
-      canvas.drawLine(Offset(i, 0), Offset(i, gameRef.size.y), gridPaint);
+    for (double i = 0; i < game.size.x; i += 40) {
+      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
     }
-    for (double j = 0; j < gameRef.size.y; j += 40) {
-      canvas.drawLine(Offset(0, j), Offset(gameRef.size.x, j), gridPaint);
+    for (double j = 0; j < game.size.y; j += 40) {
+      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
     }
   }
 }
 
-class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>, CollisionCallbacks {
+class ToiletPlayer extends PositionComponent with HasGameReference<CacaCatchFlameGame>, CollisionCallbacks {
   bool hasShield;
   ui.Image? cachedToiletImage;
 
@@ -262,7 +279,6 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
 
   @override
   void render(Canvas canvas) {
-    final double half = 22; // Radio de la taza
     final center = Offset(size.x / 2, size.y / 2);
 
     if (hasShield) {
@@ -277,14 +293,14 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
       canvas.drawCircle(center, 34, borderPaint);
     }
 
-    if (gameRef.isSodaFrenzy) {
+    if (game.isSodaFrenzy) {
       final frenzyPaint = Paint()
         ..color = Colors.cyanAccent.withAlpha(70)
         ..style = PaintingStyle.fill;
       canvas.drawCircle(center, 36, frenzyPaint);
     }
 
-    if (gameRef.isFeverMode) {
+    if (game.isFeverMode) {
       final feverPaint = Paint()
         ..color = Colors.amber.withAlpha(90)
         ..style = PaintingStyle.fill;
@@ -299,7 +315,7 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
   }
 
   void _drawToiletStatic(Canvas canvas, Offset center) {
-    final double half = 22;
+    const double half = 22;
 
     // 1. Tanque trasero
     final tankRect = Rect.fromLTWH(center.dx - half * 0.7, center.dy - half * 0.8, half * 1.4, half * 0.7);
@@ -321,6 +337,8 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
         Offset(center.dx - 10, center.dy + 5),
         half * 1.1,
         [Colors.white, Colors.grey[300]!, Colors.grey[500]!],
+        // dart:ui exige colorStops cuando hay más de 2 colores
+        [0.0, 0.55, 1.0],
       );
     
     final Path bowlPath = Path();
@@ -359,7 +377,7 @@ class ToiletPlayer extends PositionComponent with HasGameRef<CacaCatchFlameGame>
   }
 }
 
-class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>, CollisionCallbacks {
+class FallingItem extends PositionComponent with HasGameReference<CacaCatchFlameGame>, CollisionCallbacks {
   final CatchItemType type;
   final double speed;
   final String skin;
@@ -382,13 +400,13 @@ class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>,
     Vector2 dir = Vector2(0, 1);
     
     bool useMagnet = false;
-    if (gameRef.isFeverMode && gameRef.hasFeverMagnet) useMagnet = true;
-    if (gameRef.hasImprovedMagnet) useMagnet = true;
+    if (game.isFeverMode && game.hasFeverMagnet) useMagnet = true;
+    if (game.hasImprovedMagnet) useMagnet = true;
 
     if (useMagnet) {
       bool isGood = type == CatchItemType.poop || type == CatchItemType.goldenPoop || type == CatchItemType.paper;
-      if (isGood && position.y > 0 && position.y < gameRef.size.y - 40) {
-        final toPlayer = gameRef.toilet.position - position;
+      if (isGood && position.y > 0 && position.y < game.size.y - 40) {
+        final toPlayer = game.toilet.position - position;
         if (toPlayer.length < 200) {
           dir = toPlayer.normalized();
           currentSpeed *= 1.5;
@@ -398,11 +416,11 @@ class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>,
 
     position.add(dir * currentSpeed * dt);
 
-    if (position.y > gameRef.size.y + 40) {
+    if (position.y > game.size.y + 40) {
       removeFromParent();
       if (type == CatchItemType.poop || type == CatchItemType.goldenPoop) {
-        gameRef.poopsCaughtConsecutively = 0;
-        gameRef.comboMultiplier = 1;
+        game.poopsCaughtConsecutively = 0;
+        game.comboMultiplier = 1;
       }
     }
   }
@@ -411,7 +429,7 @@ class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>,
   void onCollisionStart(Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollisionStart(intersectionPoints, other);
     if (other is ToiletPlayer) {
-      gameRef.handleItemCaught(this);
+      game.handleItemCaught(this);
     }
   }
 
@@ -455,8 +473,8 @@ class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>,
       );
     
     final path = Path();
-    final int points = 10;
-    final double angleStep = (2 * pi) / points;
+    const int points = 10;
+    const double angleStep = (2 * pi) / points;
     
     for (int i = 0; i < points; i++) {
       double angle = i * angleStep;
@@ -464,8 +482,11 @@ class FallingItem extends PositionComponent with HasGameRef<CacaCatchFlameGame>,
       double r = half + (i % 2 == 0 ? 5.0 + wave : -2.0);
       double px = center.dx + cos(angle) * r;
       double py = center.dy + sin(angle) * r;
-      if (i == 0) path.moveTo(px, py);
-      else path.lineTo(px, py);
+      if (i == 0) {
+        path.moveTo(px, py);
+      } else {
+        path.lineTo(px, py);
+      }
     }
     path.close();
     canvas.drawPath(path, paint);

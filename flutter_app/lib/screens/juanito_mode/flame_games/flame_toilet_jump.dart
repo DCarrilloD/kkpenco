@@ -27,6 +27,7 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   late JumpingPoop player;
   late ParallaxSky sky;
   late CameraComponent cameraComponent;
+  @override
   late World world;
 
   int score = 0;
@@ -58,14 +59,14 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     await FlameAudio.audioCache.loadAll(['jump.wav', 'coin.wav', 'hit.wav']);
 
     cachedBacteriaImage = await SpriteRasterizer.rasterize(30, 30, (canvas) {
-      final center = const Offset(15, 15);
-      final half = 15.0;
+      const center = Offset(15, 15);
+      const half = 15.0;
       final paint = Paint()
         ..shader = ui.Gradient.radial(Offset(center.dx - 3, center.dy - 3), half, [Colors.purpleAccent[200]!, Colors.purple[800]!]);
       
       final path = Path();
-      final points = 10;
-      final angleStep = (2 * pi) / points;
+      const points = 10;
+      const angleStep = (2 * pi) / points;
       for (int i = 0; i < points; i++) {
         double angle = i * angleStep;
         double r = half + (i % 2 == 0 ? 2.0 : -1.0);
@@ -110,12 +111,19 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     player.position = Vector2(150, 280);
     world.add(player);
 
-    cameraComponent.follow(player, horizontalOnly: false, verticalOnly: true);
+    // Cámara manual que SOLO sube (estilo Doodle Jump): si siguiera al jugador
+    // también al caer, la condición de game over por caída sería inalcanzable.
+    cameraComponent.viewfinder.position = Vector2(size.x / 2, player.position.y);
   }
 
   @override
   void update(double dt) {
     super.update(dt);
+
+    // La cámara solo asciende: nunca baja aunque el jugador caiga
+    if (player.isMounted && player.position.y < cameraComponent.viewfinder.position.y) {
+      cameraComponent.viewfinder.position = Vector2(size.x / 2, player.position.y);
+    }
 
     // Update max height for score and level
     if (player.position.y < maxHeightReached) {
@@ -127,9 +135,13 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
         onScoreChanged(score);
 
         int newLevel = 1;
-        if (score > 1000) newLevel = 4;
-        else if (score > 500) newLevel = 3;
-        else if (score > 200) newLevel = 2;
+        if (score > 1000) {
+          newLevel = 4;
+        } else if (score > 500) {
+          newLevel = 3;
+        } else if (score > 200) {
+          newLevel = 2;
+        }
 
         if (newLevel != level) {
           level = newLevel;
@@ -159,17 +171,25 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     PlatformType type = PlatformType.normal;
     double relY = targetY; // For calculations
 
-    if (rVal < 0.12 && relY < 150) type = PlatformType.fragile;
-    else if (rVal < 0.28 && relY < 200) type = PlatformType.moving;
-    else if (rVal < 0.38 && relY < -100) type = PlatformType.superSpring;
+    if (rVal < 0.12 && relY < 150) {
+      type = PlatformType.fragile;
+    } else if (rVal < 0.28 && relY < 200) {
+      type = PlatformType.moving;
+    } else if (rVal < 0.38 && relY < -100) {
+      type = PlatformType.superSpring;
+    }
 
     ItemType item = ItemType.none;
     if (type == PlatformType.normal && relY < 250) {
       final iVal = rand.nextDouble();
       final double probMult = activeBuffCategory == AchievementCategory.calendar ? 1.20 : 1.0;
-      if (iVal < 0.10 * probMult) item = ItemType.spring;
-      else if (iVal < 0.14 * probMult && relY < -100) item = ItemType.jetpack;
-      else if (iVal < 0.22 * probMult && relY < 0) item = ItemType.balloon;
+      if (iVal < 0.10 * probMult) {
+        item = ItemType.spring;
+      } else if (iVal < 0.14 * probMult && relY < -100) {
+        item = ItemType.jetpack;
+      } else if (iVal < 0.22 * probMult && relY < 0) {
+        item = ItemType.balloon;
+      }
     }
 
     world.add(JumpPlatform(xPos: pX, yPos: targetY, type: type, item: item));
@@ -199,6 +219,8 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
     GameAudio.play('hit.wav', volume: 0.8);
     pauseEngine();
     HapticFeedback.vibrate();
+    // Bonus de altura: 1 K$ por cada 100 puntos de altura alcanzada
+    coinsEarned += score ~/ 100;
     onGameOver(score, coinsEarned);
   }
 
@@ -276,9 +298,13 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
     anchor = Anchor.center;
     add(CircleHitbox(radius: 15));
     
-    if (startJetpack) activateJetpack();
-    else if (startSuperJump) velocityY = -500.0;
-    else velocityY = -280.0;
+    if (startJetpack) {
+      activateJetpack();
+    } else if (startSuperJump) {
+      velocityY = -500.0;
+    } else {
+      velocityY = -280.0;
+    }
   }
 
   @override
@@ -361,12 +387,12 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
     if (hasBalloon) {
       final linePaint = Paint()..color = Colors.white70..strokeWidth = 1.0;
       canvas.drawLine(const Offset(0, -10), const Offset(12, -32), linePaint);
-      final gWidth = 14.0;
-      final gHeight = 18.0;
-      final gx = 12.0;
-      final gy = -42.0;
-      final balloonPaint = Paint()..shader = ui.Gradient.radial(Offset(gx - 2, gy - 3), gWidth, [Colors.red[300]!, Colors.red[700]!]);
-      canvas.drawOval(Rect.fromCenter(center: Offset(gx, gy), width: gWidth, height: gHeight), balloonPaint);
+      const gWidth = 14.0;
+      const gHeight = 18.0;
+      const gx = 12.0;
+      const gy = -42.0;
+      final balloonPaint = Paint()..shader = ui.Gradient.radial(const Offset(gx - 2, gy - 3), gWidth, [Colors.red[300]!, Colors.red[700]!]);
+      canvas.drawOval(Rect.fromCenter(center: const Offset(gx, gy), width: gWidth, height: gHeight), balloonPaint);
     }
 
     if (cachedPoopImage != null) {
@@ -471,9 +497,13 @@ class JumpPlatform extends PositionComponent with HasGameReference<ToiletJumpFla
     if (broken) return;
 
     Paint pPaint = Paint()..color = Colors.greenAccent[700]!;
-    if (type == PlatformType.moving) pPaint.color = Colors.blueAccent[400]!;
-    else if (type == PlatformType.fragile) pPaint.color = Colors.brown[600]!;
-    else if (type == PlatformType.superSpring) pPaint.color = Colors.redAccent[400]!;
+    if (type == PlatformType.moving) {
+      pPaint.color = Colors.blueAccent[400]!;
+    } else if (type == PlatformType.fragile) {
+      pPaint.color = Colors.brown[600]!;
+    } else if (type == PlatformType.superSpring) {
+      pPaint.color = Colors.redAccent[400]!;
+    }
 
     final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(0, 0, size.x, size.y), const Radius.circular(5));
     canvas.drawRRect(rrect, pPaint);
@@ -545,7 +575,8 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
         other.velocityY = -300.0;
         other.availableDoubleJumps = 1;
         game.score += 100;
-        game.addFloatingText('+100', position.clone(), Colors.orangeAccent);
+        game.coinsEarned += 5;
+        game.addFloatingText('+100 · 5 K\$', position.clone(), Colors.orangeAccent);
         HapticFeedback.mediumImpact();
         removeFromParent(); // Desaparece
       } else {
@@ -570,8 +601,8 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
         ..shader = ui.Gradient.radial(Offset(center.dx - 3, center.dy - 3), half, [Colors.purpleAccent[200]!, Colors.purple[800]!]);
       
       final path = Path();
-      final points = 10;
-      final angleStep = (2 * pi) / points;
+      const points = 10;
+      const angleStep = (2 * pi) / points;
       final timeMs = DateTime.now().millisecondsSinceEpoch;
       
       for (int i = 0; i < points; i++) {
@@ -580,12 +611,15 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
         double r = half + (i % 2 == 0 ? 4.0 + wave : -1.5);
         double px = center.dx + cos(angle) * r;
         double py = center.dy + sin(angle) * r;
-        if (i == 0) path.moveTo(px, py);
-        else path.lineTo(px, py);
+        if (i == 0) {
+          path.moveTo(px, py);
+        } else {
+          path.lineTo(px, py);
+        }
       }
       path.close();
       canvas.drawPath(path, paint);
-      
+
       // Eyes
       final eyePaint = Paint()..color = Colors.redAccent;
       canvas.drawCircle(Offset(center.dx - half * 0.35, center.dy - half * 0.1), 4.0, eyePaint);

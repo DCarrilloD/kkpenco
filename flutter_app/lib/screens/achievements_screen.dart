@@ -398,7 +398,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                         const SizedBox(height: 24),
                       ],
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             ),

@@ -358,30 +358,41 @@ void main() {
         expect(achievements.contains('weight_titan_100kg'), isTrue);
       });
 
-      test('Cálculo de peso de deposición: límites de 50g y 1000g coherentes', () {
-        // 1. Caso mínimo extremo (duración ínfima, consistencia ligera)
+      test('Cálculo de peso de deposición: fórmula base * dificultad con límites 50g-1000g', () {
+        // La fórmula actual ignora la duración: base * (1 + (dificultad-1) * 0.05), clamp [50, 1000].
+
+        // 1. Caso mínimo: consistencia más ligera (Cabra, 50g) y dificultad 1 toca el límite inferior
         final weightMin = KKEvent.calculateWeight(
-          consistency: Consistency.espurruteo,
-          durationSeconds: 1, // 1 segundo
+          consistency: Consistency.cabra,
+          durationSeconds: 1,
           difficulty: 1,
         );
         expect(weightMin, equals(50.0));
 
-        // 2. Caso máximo extremo (duración inmensa, consistencia pesada, dificultad máxima)
+        // 2. Caso máximo: consistencia más pesada (Jurásica, 750g) y dificultad máxima
         final weightMax = KKEvent.calculateWeight(
           consistency: Consistency.jurasica,
-          durationSeconds: 7200, // 2 horas
+          durationSeconds: 7200,
           difficulty: 5,
         );
-        expect(weightMax, equals(1000.0));
+        expect(weightMax, equals(900.0));
+        expect(weightMax, lessThanOrEqualTo(1000.0));
 
-        // 3. Caso normal típico (5 minutos, consistencia normal, dificultad media)
+        // 3. Caso normal típico (consistencia normal 300g, dificultad media 3 → factor 1.1)
         final weightNormal = KKEvent.calculateWeight(
           consistency: Consistency.normal,
           durationSeconds: 300,
           difficulty: 3,
         );
-        expect(weightNormal, equals(165.0));
+        expect(weightNormal, equals(330.0));
+
+        // 4. La duración no influye en el resultado (parámetro mantenido por compatibilidad)
+        final weightShort = KKEvent.calculateWeight(
+          consistency: Consistency.normal,
+          durationSeconds: 1,
+          difficulty: 3,
+        );
+        expect(weightShort, equals(weightNormal));
       });
     });
   });

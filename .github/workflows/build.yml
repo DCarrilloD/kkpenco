@@ -9,48 +9,42 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    
+
+    defaults:
+      run:
+        working-directory: flutter_app
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # --- NUEVO PASO: Instalar librerías de sistema Linux ---
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev pkg-config libgirepository1.0-dev libcairo2-dev
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - name: Setup Java
+        uses: actions/setup-java@v4
         with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          # Actualizamos pip por si acaso
-          python -m pip install --upgrade pip
-          
-          # Instalamos dependencias
-          pip install -r requirements.txt
-          pip install flet
+          distribution: 'temurin'
+          java-version: '17'
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.27.1'
+          flutter-version: '3.41.4'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze (errores y warnings, los infos no bloquean)
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run tests
+        run: flutter test
 
       - name: Build APK
-        run: |
-          # 1. Copiamos los requisitos
-          cp requirements.txt mobile_app/
-          
-          # 2. Construimos (Con el truco de "yes" y apuntando a mobile_app)
-          yes | flet build apk mobile_app --module-name main_flet --verbose
+        run: flutter build apk --release
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: app-release
-    # Usamos un patrón de búsqueda para que encuentre el APK esté donde esté
-          path: "**/build/apk/*.apk"
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk

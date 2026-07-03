@@ -43,7 +43,8 @@ class _HeatmapScreenState extends State<HeatmapScreen> {
     });
 
     try {
-      final events = await _dbService.getAllEvents();
+      // Acotamos a los 1500 eventos más recientes: suficiente para el mapa sin leer la colección entera
+      final events = await _dbService.getAllEvents(limit: 1500);
       // Filtrar solo los que tienen coordenadas válidas
       final geoEvents = events.where((e) => e.latitude != null && e.longitude != null).toList();
 

@@ -42,7 +42,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   // Zen Music Control
   bool _isMusicEnabled = true;
-  bool _alternateGameTrack = false;
+  final bool _alternateGameTrack = false;
   String? _currentlyPlayingSource;
   late AnimationController _soundAnimController;
 
@@ -51,8 +51,6 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   // Active Game State
   ActiveGame _activeGame = ActiveGame.none;
-  int _score = 0;
-  int _lives = 3;
 
 
   // High Scores
@@ -69,7 +67,6 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
   bool _hasInitialSpring = false;
   bool _hasFeverMagnet = false;
   bool _hasExtraLife = false;
-  bool _isMagnetActive = false;
   bool _hasImprovedMagnet = false;
   bool _hasLifeInsurance = false;
   String _selectedGameFilter = 'todos';
@@ -150,7 +147,6 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     final user = _authService.currentUser;
     if (user != null) {
       final profile = await _dbService.getUserZenProfile(user.uid);
-      final prefs = await SharedPreferences.getInstance();
       if (mounted) {
         setState(() {
           _kcoins = profile['kcoins'] ?? 0;
@@ -211,16 +207,13 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
           _activeGame == ActiveGame.poopInvaders;
 
       final String targetSource;
-      final bool isLocal;
 
       if (isMinigame) {
         targetSource = _alternateGameTrack
             ? 'audio/First_Light_on_the_Ridge.mp3'
             : 'audio/Village_of_Seven_Springs.mp3';
-        isLocal = true;
       } else {
         targetSource = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3';
-        isLocal = false;
       }
 
       if (_currentlyPlayingSource == targetSource) {
@@ -556,7 +549,6 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
                 final user = _authService.currentUser;
                 if (user != null) _dbService.addKcoins(user.uid, coins);
               },
-              onUnlockAchievement: () {},
               onSaveHighScore: (score) => _saveHighScore('caca_catch', score),
             ),
           );
@@ -574,16 +566,24 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
                 final user = _authService.currentUser;
                 if (user != null) _dbService.addKcoins(user.uid, coins);
               },
-              onUnlockAchievement: () {},
               onSaveHighScore: (score) => _saveHighScore('flappy_poop', score),
             ),
           );
         case ActiveGame.toiletJump:
           return RepaintBoundary(
             child: ToiletJumpGame(
+              highScore: _highScoreToiletJump,
               equippedSkin: _equippedSkin,
+              hasInitialSpring: _hasInitialSpring,
+              hasInitialSoapShield: _hasInitialSoapShield,
               activeBuffCategory: _activeBuffCategory,
-              onGameOver: (score, coins) => _selectGame(ActiveGame.selectMenu),
+              onGameOver: (score) => _selectGame(ActiveGame.selectMenu),
+              onAddKcoins: (coins) {
+                if (_activeBuffCategory == AchievementCategory.streaks) coins = (coins * 1.25).ceil();
+                final user = _authService.currentUser;
+                if (user != null) _dbService.addKcoins(user.uid, coins);
+              },
+              onSaveHighScore: (score) => _saveHighScore('toilet_jump', score),
             ),
           );
         case ActiveGame.poopInvaders:
@@ -679,7 +679,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
               const SizedBox(width: 8),
               Switch(
                 value: _isMusicEnabled,
-                activeColor: Colors.amberAccent,
+                activeThumbColor: Colors.amberAccent,
                 activeTrackColor: Colors.amberAccent.withAlpha(50),
                 inactiveThumbColor: Colors.grey,
                 inactiveTrackColor: Colors.white10,

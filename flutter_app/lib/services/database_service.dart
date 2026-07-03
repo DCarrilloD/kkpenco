@@ -8,7 +8,6 @@ import 'auth_service.dart'; // Para leer useMockData
 import '../models/event.dart';
 import '../models/chat_message.dart';
 import '../models/achievement.dart';
-import '../models/app_user.dart';
 
 // Estructura para paginación
 class PagedEventsResult {
@@ -461,14 +460,17 @@ class DatabaseService {
             snapshot.docs.map((doc) => doc.data()).toList());
   }
 
-  // Obtener todos los eventos (para exportación CSV de admin o backup)
-  Future<List<KKEvent>> getAllEvents() async {
+  // Obtener todos los eventos (para exportación CSV de admin o backup).
+  // Usa [limit] en pantallas de visualización para acotar lecturas; déjalo nulo en exportaciones/backups.
+  Future<List<KKEvent>> getAllEvents({int? limit}) async {
     if (useMockData) {
-      return List.from(_mockEvents);
+      return List.from(limit != null ? _mockEvents.take(limit) : _mockEvents);
     }
-    final snapshot = await _eventsRef
-        .orderBy('timestamp', descending: true)
-        .get();
+    Query<KKEvent> query = _eventsRef.orderBy('timestamp', descending: true);
+    if (limit != null) {
+      query = query.limit(limit);
+    }
+    final snapshot = await query.get();
     return snapshot.docs.map((doc) => doc.data()).toList();
   }
 
@@ -522,6 +524,7 @@ class DatabaseService {
     return _db
         .collection('users')
         .orderBy('poopCount', descending: true)
+        .limit(100)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) {
               final data = doc.data();
