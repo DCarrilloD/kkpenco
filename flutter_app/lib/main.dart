@@ -79,7 +79,9 @@ Future<void> interactiveCallback(Uri? uri) async {
     longitude: null,
   );
 
-  await dbService.addEvent(newEvent);
+  // Esperar el ack del servidor: este isolate de background muere al acabar
+  // y una escritura solo encolada en local no se sincronizaría hasta abrir la app
+  await dbService.addEvent(newEvent, waitForServerAck: true);
 
   try {
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();

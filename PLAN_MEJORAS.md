@@ -49,7 +49,7 @@
 - **Fix**: contadores agregados en el doc del usuario (cacas nocturnas, por localización, coordenadas distintas…) actualizados con `FieldValue.increment` en el mismo batch del evento; evaluar logros contra esos contadores. Pasar la lista de logros ya leída para evitar relecturas.
 - **Esfuerzo**: grande, pero es la mejora con más retorno.
 
-### [ ] 2.2 Guardado offline se cuelga con spinner infinito 🟠
+### [x] 2.2 Guardado offline se cuelga con spinner infinito 🟠 — HECHO (2026-07-05)
 - **Dónde**: `database_service.dart:243-347` (`addEvent`), `tracker_screen.dart` (`_saveEvent`).
 - **Problema**: con `persistenceEnabled: true`, `await batch.commit()` no resuelve hasta el ack del servidor → sin conexión la UI queda bloqueada aunque la escritura ya esté encolada. Además `addEvent` encadena 4-5 round-trips secuenciales (`addKcoins`, rachas, duelos, logros).
 - **Fix**: escritura optimista (no esperar el ack), fusionar `addKcoins` en el batch principal, ejecutar la lógica secundaria sin bloquear la UI.

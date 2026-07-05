@@ -241,8 +241,12 @@ class DatabaseService {
 
   // --- EVENTOS (TRACKER) ---
 
-  // Agregar evento e incrementar contador del usuario en una transacción
-  Future<void> addEvent(KKEvent event) async {
+  // Agregar evento e incrementar contador del usuario en una transacción.
+  // [waitForServerAck]: con la persistencia offline activada, el commit no
+  // resuelve hasta el ack del servidor; la UI usa escritura optimista (false),
+  // pero el widget de escritorio debe esperar o su isolate de background
+  // moriría con la escritura solo en la cola local.
+  Future<void> addEvent(KKEvent event, {bool waitForServerAck = false}) async {
     if (useMockData) {
       // Agregar al mock local
       final newMockEvent = KKEvent(
@@ -331,18 +335,23 @@ class DatabaseService {
       newEventDate: event.timestamp,
     );
 
+    int kcoinsReward = 15;
+    if (event.latitude != null) kcoinsReward += 10;
+    if (event.difficulty >= 4) kcoinsReward += 5;
+    if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
+
     final batch = _db.batch();
 
     // Registrar el evento con ID autogenerado
     batch.set(eventRef, event);
 
-    // Incrementar el contador de deposiciones del usuario de por vida
-    // y actualizar rachas en la misma escritura atómica
+    // Contador de por vida, rachas y Kakadólares en la misma escritura atómica
     batch.update(userRef, {
       'poopCount': FieldValue.increment(1),
       'lastPoop': Timestamp.fromDate(event.timestamp),
       'currentStreak': newStreak,
       'maxStreak': newStreak > maxStreak ? newStreak : maxStreak,
+      'kcoins': FieldValue.increment(kcoinsReward),
     });
 
     // Incrementar estadísticas mensuales de forma atómica
@@ -352,17 +361,30 @@ class DatabaseService {
       'month': monthStr,
     }, SetOptions(merge: true));
 
-    await batch.commit();
+    // Lógica secundaria: logro de kcoins (umbral evaluado con el valor previo
+    // ya leído, sin relectura), duelos y logros. La racha ya va en el batch.
+    Future<void> runSecondaryLogic() async {
+      final previousKcoins = userData?['kcoins'] as int? ?? 0;
+      if (previousKcoins + kcoinsReward >= 500) {
+        await unlockAchievement(event.userId, 'caca_capitalist', null);
+      }
+      await _updateActiveDuelsCount(event.userId);
+      await _checkAndUnlockAchievements(event);
+    }
 
-    int kcoinsReward = 15;
-    if (event.latitude != null) kcoinsReward += 10;
-    if (event.difficulty >= 4) kcoinsReward += 5;
-    if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
-    await addKcoins(event.userId, kcoinsReward);
-
-    // La racha ya se actualizó dentro del batch con el lastPoop previo
-    await _updateActiveDuelsCount(event.userId);
-    await _checkAndUnlockAchievements(event);
+    if (waitForServerAck) {
+      await batch.commit();
+      await runSecondaryLogic();
+    } else {
+      // Escritura optimista: la persistencia deja la escritura encolada y
+      // visible localmente al instante; no se bloquea la UI esperando el ack
+      unawaited(batch.commit().catchError((e) {
+        debugPrint('Error al confirmar el guardado del evento: $e');
+      }));
+      unawaited(runSecondaryLogic().catchError((e) {
+        debugPrint('Error en la lógica secundaria de addEvent: $e');
+      }));
+    }
   }
 
   // Verificar si un usuario tiene el rol admin en Firestore o en la sesión simulada
