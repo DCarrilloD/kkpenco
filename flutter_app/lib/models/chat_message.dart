@@ -23,6 +23,23 @@ class ChatMessage {
     this.senderUid,
   });
 
+  ChatMessage copyWith({
+    Map<String, dynamic>? metadata,
+    String? senderUid,
+  }) {
+    return ChatMessage(
+      id: id,
+      userId: userId,
+      displayName: displayName,
+      content: content,
+      timestamp: timestamp,
+      type: type,
+      reactions: reactions,
+      metadata: metadata ?? this.metadata,
+      senderUid: senderUid ?? this.senderUid,
+    );
+  }
+
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final reactionsData = data['reactions'] as Map<String, dynamic>? ?? {};

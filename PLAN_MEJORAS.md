@@ -27,7 +27,7 @@
 - **Fix**: actualizar reglas (duelos con validación de participantes, delete de chat por dueño, mensajes de sistema con campo firmado o Cloud Function, `authorized_emails` solo-admin) y desplegar.
 - **Esfuerzo**: medio.
 
-### [ ] 1.3 Las fotos del chat solo las ve quien las envía 🔴
+### [x] 1.3 Las fotos del chat solo las ve quien las envía 🔴 — CÓDIGO HECHO (2026-07-05); PENDIENTE: activar Storage en la consola Firebase ("Get Started" en https://console.firebase.google.com/project/kkpenco-app-2026/storage, puede requerir plan Blaze) y luego `firebase deploy --only storage`
 - **Dónde**: `flutter_app/lib/screens/chat_screen.dart:133` (`_sendImage`) y `database_service.dart` (`sendChatMessage`).
 - **Problema**: se guarda `image.path` (ruta local del dispositivo) en Firestore y nunca se sube el archivo. Los demás usuarios ven imagen rota. `firebase_storage` ya está en `pubspec.yaml` pero no se usa aquí.
 - **Fix**: subir a Firebase Storage en la rama Firebase de `sendChatMessage`, guardar la URL de descarga; mantener ruta local en la rama mock. Añadir reglas de Storage.

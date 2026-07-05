@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart'; // Para leer useMockData
 import '../models/event.dart';
@@ -611,18 +613,25 @@ class DatabaseService {
     // las reglas de Firestore exigen senderUid == request.auth.uid
     var messageToSend = message;
     if (message.userId == 'system' && message.senderUid == null) {
-      messageToSend = ChatMessage(
-        id: message.id,
-        userId: message.userId,
-        displayName: message.displayName,
-        content: message.content,
-        timestamp: message.timestamp,
-        type: message.type,
-        reactions: message.reactions,
-        metadata: message.metadata,
-        senderUid: AuthService().currentUser?.uid,
+      messageToSend = message.copyWith(senderUid: AuthService().currentUser?.uid);
+    }
+
+    // Subir la foto a Storage y guardar la URL de descarga: la ruta local
+    // solo existe en el dispositivo del emisor
+    final localPath = message.metadata?['imagePath'] as String?;
+    if (message.type == 'image' && localPath != null && !localPath.startsWith('http')) {
+      final storageRef = FirebaseStorage.instance
+          .ref('chat_images/${message.userId}/${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await storageRef.putFile(
+        File(localPath),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final downloadUrl = await storageRef.getDownloadURL();
+      messageToSend = messageToSend.copyWith(
+        metadata: {...messageToSend.metadata!, 'imagePath': downloadUrl},
       );
     }
+
     await _chatRef.add(messageToSend);
     if (message.type == 'share_poop') {
       await addKcoins(message.userId, 10);
