@@ -61,7 +61,7 @@
 - **Fix**: añadir observer de ciclo de vida (pausar música/timer en `paused`, reanudar en `resumed`); aislar el reloj en un widget propio con `ValueNotifier`.
 - **Esfuerzo**: pequeño.
 
-### [ ] 2.4 Cronómetro del tracker pierde tiempo en background 🟠
+### [x] 2.4 Cronómetro del tracker pierde tiempo en background 🟠 — HECHO (2026-07-05)
 - **Dónde**: `tracker_screen.dart:105-123` (`didChangeAppLifecycleState`).
 - **Problema**: al ir a background cancela el timer (bien para batería), pero al volver continúa desde el mismo segundo: el tiempo con la pantalla apagada se pierde — justo el caso de uso principal 💩.
 - **Fix**: guardar `DateTime` de inicio y derivar `_stopwatchSeconds` de `DateTime.now().difference(inicio)` al reanudar.

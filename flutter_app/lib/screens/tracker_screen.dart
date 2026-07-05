@@ -50,6 +50,9 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
   bool _isStopwatchRunning = false;
   int _stopwatchSeconds = 0;
   Timer? _stopwatchTimer;
+  // Instante de inicio (menos lo ya acumulado): los segundos se derivan del
+  // reloj de pared para no perder el tiempo con la pantalla apagada
+  DateTime? _stopwatchStart;
 
   @override
   void initState() {
@@ -101,23 +104,36 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     super.dispose();
   }
 
+  // Recalcula los segundos a partir del instante de inicio
+  void _syncStopwatchSeconds() {
+    final start = _stopwatchStart;
+    if (start != null) {
+      _stopwatchSeconds = DateTime.now().difference(start).inSeconds;
+    }
+  }
+
+  void _startStopwatchTicker() {
+    _stopwatchTimer?.cancel();
+    _stopwatchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        setState(_syncStopwatchSeconds);
+      }
+    });
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive || state == AppLifecycleState.hidden) {
+      // Parar el tick ahorra batería; el tiempo no se pierde porque al
+      // volver se deriva de _stopwatchStart
       if (_isStopwatchRunning && _stopwatchTimer != null) {
         _stopwatchTimer?.cancel();
         _stopwatchTimer = null;
       }
     } else if (state == AppLifecycleState.resumed) {
       if (_isStopwatchRunning && _stopwatchTimer == null) {
-        _stopwatchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-          if (mounted) {
-            setState(() {
-              _stopwatchSeconds++;
-              _durationMinutes = (_stopwatchSeconds / 60).clamp(0.1, 999.0);
-            });
-          }
-        });
+        setState(_syncStopwatchSeconds);
+        _startStopwatchTicker();
       }
     }
   }
@@ -357,10 +373,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
       // Haptic feedback impact when saving poop
       HapticFeedback.mediumImpact();
 
-              _stopwatchTimer?.cancel();
-        _isStopwatchRunning = false;
-        _stopwatchSeconds = 0;
-        _notesController.clear();
+      _stopwatchTimer?.cancel();
+      _isStopwatchRunning = false;
+      _stopwatchSeconds = 0;
+      _stopwatchStart = null;
+      _notesController.clear();
       setState(() {
         _selectedConsistency = Consistency.normal;
         _selectedLocation = LocationTag.casa;
@@ -840,21 +857,18 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
                               HapticFeedback.heavyImpact();
                               _stopwatchTimer?.cancel();
                               setState(() {
+                                _syncStopwatchSeconds();
                                 _isStopwatchRunning = false;
+                                _stopwatchStart = null;
                               });
                             } else {
                               HapticFeedback.mediumImpact();
                               setState(() {
                                 _isStopwatchRunning = true;
-                                if (_stopwatchSeconds == 0) {
-                                  _stopwatchSeconds = 0;
-                                }
+                                // Reanudar conservando los segundos ya acumulados
+                                _stopwatchStart = DateTime.now().subtract(Duration(seconds: _stopwatchSeconds));
                               });
-                              _stopwatchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-                                setState(() {
-                                  _stopwatchSeconds++;
-                                });
-                              });
+                              _startStopwatchTicker();
                             }
                           },
                           onLongPress: () {
