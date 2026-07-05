@@ -80,7 +80,7 @@
 
 ## Fase 3 — Conectividad y experiencia offline
 
-### [ ] 3.1 El fallback de ubicación por IP no funciona 🟠 (trivial)
+### [x] 3.1 El fallback de ubicación por IP no funciona 🟠 (trivial) — HECHO (2026-07-05, cambiado a ipwho.is)
 - **Dónde**: `tracker_screen.dart:181` (`https://ip-api.com/json`).
 - **Problema**: ip-api.com solo sirve HTTP en el tier gratuito (HTTPS es de pago), y HTTP plano está bloqueado por la política cleartext de Android → el fallback falla siempre.
 - **Fix**: cambiar a un servicio gratuito con HTTPS (p. ej. `ipwho.is` o `ipapi.co/json`).

@@ -177,14 +177,16 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
 
   Future<Map<String, double>?> _getLocationByIP() async {
     try {
+      // ipwho.is ofrece HTTPS en su tier gratuito (ip-api.com solo HTTP,
+      // bloqueado por la política cleartext de Android)
       final response = await http
-          .get(Uri.parse('https://ip-api.com/json'))
+          .get(Uri.parse('https://ipwho.is/'))
           .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['status'] == 'success') {
-          final double lat = (data['lat'] as num).toDouble();
-          final double lon = (data['lon'] as num).toDouble();
+        if (data['success'] == true) {
+          final double lat = (data['latitude'] as num).toDouble();
+          final double lon = (data['longitude'] as num).toDouble();
           return {'latitude': lat, 'longitude': lon};
         }
       }
