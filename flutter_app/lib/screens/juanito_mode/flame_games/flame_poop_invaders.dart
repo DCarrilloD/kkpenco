@@ -140,10 +140,12 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   void _spawnWave() {
     addFloatingText('¡OLEADA $wave! 👾', Vector2(size.x / 2, size.y * 0.45), Colors.greenAccent, size: 24);
 
-    int cols = 5;
+    // Oleada 1 más suave: 8 enemigos en vez de 10 para no abrumar al empezar
+    int cols = wave == 1 ? 4 : 5;
     int rows = 2;
     double speedX = 60.0 + wave * 10.0;
     bool isAlienWave = nextBossIndex > 1;
+    double startX = size.x * (1 - (cols - 1) * 0.17) / 2;
 
     for (int r = 0; r < rows; r++) {
       for (int c = 0; c < cols; c++) {
@@ -154,7 +156,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
           bossType: 'none',
           visualType: isAlienWave ? 'alien' : 'bacteria',
         )
-          ..position = Vector2(size.x * 0.16 + c * (size.x * 0.17), size.y * 0.12 + r * (size.y * 0.12))
+          ..position = Vector2(startX + c * (size.x * 0.17), size.y * 0.12 + r * (size.y * 0.12))
           ..velocity = Vector2(c % 2 == 0 ? speedX : -speedX, 0));
       }
     }
