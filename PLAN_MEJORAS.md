@@ -17,7 +17,7 @@
 - **Fix**: leer el `lastPoop` previo antes del `batch.commit()` (o calcular la racha dentro del propio batch) y pasar el valor antiguo a `_updateUserStreaks`.
 - **Esfuerzo**: pequeño. **Test**: añadir caso en `test/` con eventos en días consecutivos.
 
-### [x] 1.2 Reglas de Firestore desincronizadas con el cliente 🔴 — HECHO (2026-07-05, pendiente de `firebase deploy --only firestore:rules`)
+### [x] 1.2 Reglas de Firestore desincronizadas con el cliente 🔴 — HECHO (2026-07-05, reglas e índices desplegados)
 - **Dónde**: `flutter_app/firestore.rules`.
 - **Problemas**:
   - `duels` **no tiene reglas** → denegado por defecto → duelos y nudges (`getActiveDuels`, `sendDuelChallenge`, `acceptDuelChallenge`) fallan en producción.
