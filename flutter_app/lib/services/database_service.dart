@@ -607,7 +607,23 @@ class DatabaseService {
       }
       return;
     }
-    await _chatRef.add(message);
+    // Los mensajes de sistema van firmados con el uid real del emisor:
+    // las reglas de Firestore exigen senderUid == request.auth.uid
+    var messageToSend = message;
+    if (message.userId == 'system' && message.senderUid == null) {
+      messageToSend = ChatMessage(
+        id: message.id,
+        userId: message.userId,
+        displayName: message.displayName,
+        content: message.content,
+        timestamp: message.timestamp,
+        type: message.type,
+        reactions: message.reactions,
+        metadata: message.metadata,
+        senderUid: AuthService().currentUser?.uid,
+      );
+    }
+    await _chatRef.add(messageToSend);
     if (message.type == 'share_poop') {
       await addKcoins(message.userId, 10);
       await unlockAchievement(message.userId, 'socializer', message.displayName);

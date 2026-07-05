@@ -9,6 +9,7 @@ class ChatMessage {
   final String type; // 'text', 'share_poop', 'image', 'game_challenge'
   final Map<String, List<String>> reactions; // emoji -> list of userIds
   final Map<String, dynamic>? metadata; // Para guardar datos del evento compartido o url de foto
+  final String? senderUid; // uid real del emisor cuando userId es 'system' (exigido por las reglas)
 
   ChatMessage({
     required this.id,
@@ -19,6 +20,7 @@ class ChatMessage {
     this.type = 'text',
     this.reactions = const {},
     this.metadata,
+    this.senderUid,
   });
 
   factory ChatMessage.fromFirestore(DocumentSnapshot doc) {
@@ -42,6 +44,7 @@ class ChatMessage {
       type: data['type'] ?? 'text',
       reactions: reactionsMap,
       metadata: data['metadata'] as Map<String, dynamic>?,
+      senderUid: data['senderUid'] as String?,
     );
   }
 
@@ -54,6 +57,7 @@ class ChatMessage {
       'type': type,
       'reactions': reactions.map((key, value) => MapEntry(key, value)),
       if (metadata != null) 'metadata': metadata,
+      if (senderUid != null) 'senderUid': senderUid,
     };
   }
 }
