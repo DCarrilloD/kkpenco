@@ -109,6 +109,20 @@
 
 ---
 
+## Fase 5 — Actualización de dependencias y tecnologías
+
+### [ ] 5.1 Actualizar Flutter y dependencias 🟡 (añadido 2026-07-05)
+- **Estado al añadirse**: Flutter 3.41.4 estable (marzo 2026, hay versión más nueva disponible); ~90 paquetes con versiones mayores incompatibles con las restricciones actuales de `pubspec.yaml`.
+- **Saltos mayores destacados** (requieren revisar breaking changes):
+  - Toda la familia Firebase: `cloud_firestore` 5→6, `firebase_auth` 5→6, `firebase_core` 3→4, `firebase_messaging` 15→16, `firebase_storage` 12→13 (se actualizan en bloque).
+  - `flutter_lints` 3→6 (traerá lints nuevos que tocar en el código).
+  - `flutter_map` 6→8 (API cambiada), `share_plus` 10→13, `file_picker` 8→11, `intl` 0.19→0.20, `csv` 6→8, `archive` 3→4, `package_info_plus` 9→10.
+- **Orden sugerido**: `flutter upgrade` → familia Firebase en bloque → `flutter_lints` (y arreglar avisos) → resto por grupos pequeños, con `flutter analyze` + `flutter test` + prueba manual en Windows (mock) y Android tras cada grupo.
+- **Nota**: el workflow `.github/workflows/build.yml` sigue siendo el del Flet legacy; aprovechar para eliminarlo o sustituirlo por uno de Flutter.
+- **Esfuerzo**: medio-grande. Hacerlo en sesión propia, sin mezclar con cambios funcionales.
+
+---
+
 ## Cosas que ya están bien (no tocar)
 
 - 60 Hz forzado en Android para ahorrar batería (`main.dart:115`).
