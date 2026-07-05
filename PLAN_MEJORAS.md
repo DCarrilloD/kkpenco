@@ -36,8 +36,13 @@
 ### [ ] 1.4 Notificaciones push muertas 🔴
 - **Dónde**: `flutter_app/lib/services/push_notification_service.dart`, `main.dart`.
 - **Problema**: `PushNotificationService.init()` no se llama desde ningún sitio: no se pide permiso, el token FCM no se guarda, `onBackgroundMessage` no se registra en `main()`. La notificación local del widget (`interactiveCallback`) falla silenciosamente en Android 13+ sin permiso runtime.
-- **Fix**: llamar a `init()` tras el login, guardar token en `users/{uid}` con `onTokenRefresh`, registrar handler de background en `main()`, pedir permiso runtime de notificaciones.
-- **Esfuerzo**: medio.
+- **Fix (parte A — cliente, recibir)**: llamar a `init()` tras el login, guardar token en `users/{uid}` con `onTokenRefresh`, registrar handler de background en `main()`, pedir permiso runtime de notificaciones. FCM es gratuito, no depende del plan de facturación.
+- **Fix (parte B — servidor, enviar; añadido 2026-07-05)**: los avisos automáticos ("X ha registrado una KK", desafíos de duelo, mensajes del chat) requieren enviar desde un entorno de confianza: la API legacy de envío desde cliente la cerró Google en 2024 y embeber una cuenta de servicio en el APK sería regalar las llaves del proyecto. Crear **Cloud Functions** (el proyecto ya está en plan Blaze desde el 2026-07-05, requisito para desplegarlas):
+  - Trigger `onDocumentCreated` en `events` → push al resto de usuarios con token registrado.
+  - Trigger en `duels` (creación → aviso al desafiado; cambio a `active`/`finished` → aviso a ambos).
+  - Opcional: trigger en `chat` para mensajes normales (valorar si no resulta ruidoso).
+  - Infra: carpeta `functions/` + registro en `firebase.json`, desplegar con `firebase deploy --only functions`. Tier gratuito de Blaze: 2M invocaciones/mes (coste real ~0 € para un grupo de amigos). Configurar alerta de presupuesto (~5 €) en Google Cloud al desplegar por primera vez.
+- **Esfuerzo**: parte A medio; parte B medio (infra nueva pero funciones sencillas).
 
 ---
 
