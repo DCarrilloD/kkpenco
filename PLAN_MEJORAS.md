@@ -55,7 +55,7 @@
 - **Fix**: escritura optimista (no esperar el ack), fusionar `addKcoins` en el batch principal, ejecutar la lógica secundaria sin bloquear la UI.
 - **Esfuerzo**: medio.
 
-### [ ] 2.3 Modo Juanito: música y timer siguen activos en background 🟠
+### [x] 2.3 Modo Juanito: música y timer siguen activos en background 🟠 — HECHO (2026-07-05)
 - **Dónde**: `flutter_app/lib/screens/juanito_mode_screen.dart:80` (Timer 1s + setState de toda la pantalla) y `:225` (`AudioPlayer` en `ReleaseMode.loop`).
 - **Problema**: sin `WidgetsBindingObserver`, la música zen sigue sonando con la app en segundo plano; el timer reconstruye la pantalla completa cada segundo, incluso con un minijuego activo.
 - **Fix**: añadir observer de ciclo de vida (pausar música/timer en `paused`, reanudar en `resumed`); aislar el reloj en un widget propio con `ValueNotifier`.

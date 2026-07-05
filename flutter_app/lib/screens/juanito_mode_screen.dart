@@ -30,15 +30,16 @@ class JuanitoModeScreen extends StatefulWidget {
   State<JuanitoModeScreen> createState() => _JuanitoModeScreenState();
 }
 
-class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTickerProviderStateMixin {
+class _JuanitoModeScreenState extends State<JuanitoModeScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _dbService = DatabaseService();
   final _authService = AuthService();
 
-  // Timer Zen
+  // Timer Zen (el reloj vive en un ValueNotifier para no reconstruir
+  // toda la pantalla cada segundo)
   late Stopwatch _stopwatch;
-  late Timer _timer;
-  String _timeString = '00:00';
-  int _elapsedSeconds = 0;
+  Timer? _timer;
+  final ValueNotifier<String> _timeNotifier = ValueNotifier('00:00');
 
   // Zen Music Control
   bool _isMusicEnabled = true;
@@ -75,18 +76,9 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _stopwatch = Stopwatch()..start();
-    
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        setState(() {
-          _elapsedSeconds = _stopwatch.elapsed.inSeconds;
-          final minutes = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
-          final seconds = (_elapsedSeconds % 60).toString().padLeft(2, '0');
-          _timeString = '$minutes:$seconds';
-        });
-      }
-    });
+    _startClock();
 
     _soundAnimController = AnimationController(
       vsync: this,
@@ -97,6 +89,36 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
     _loadZenProfile();
     _loadMusicPreference();
     _precacheFlameAudios();
+  }
+
+  void _startClock() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      final elapsed = _stopwatch.elapsed.inSeconds;
+      final minutes = (elapsed ~/ 60).toString().padLeft(2, '0');
+      final seconds = (elapsed % 60).toString().padLeft(2, '0');
+      _timeNotifier.value = '$minutes:$seconds';
+    });
+  }
+
+  // Pausar música y reloj con la app en segundo plano; reanudar al volver
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.resumed:
+        _stopwatch.start();
+        _startClock();
+        if (_isMusicEnabled && !JuanitoModeScreen.isMuted && _currentlyPlayingSource != null) {
+          _audioPlayer.resume();
+        }
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+        _stopwatch.stop();
+        _timer?.cancel();
+        _audioPlayer.pause();
+      default:
+        break;
+    }
   }
 
   void _precacheFlameAudios() {
@@ -115,7 +137,9 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   @override
   void dispose() {
-    _timer.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _timer?.cancel();
+    _timeNotifier.dispose();
     _soundAnimController.dispose();
     _audioPlayer.dispose();
     super.dispose();
@@ -459,8 +483,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
 
   void _finishZenSession() {
     _stopwatch.stop();
-    
-    final durationMinutes = max(1.0, _elapsedSeconds / 60.0);
+
+    final durationMinutes = max(1.0, _stopwatch.elapsed.inSeconds / 60.0);
     Navigator.of(context).pop(durationMinutes);
   }
 
@@ -505,13 +529,16 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen> with SingleTicker
                         style: TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5),
                       ),
                       const SizedBox(height: 5),
-                      Text(
-                        _timeString,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'monospace',
+                      ValueListenableBuilder<String>(
+                        valueListenable: _timeNotifier,
+                        builder: (context, time, _) => Text(
+                          time,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                          ),
                         ),
                       ),
                     ],
