@@ -139,6 +139,36 @@ class KKEvent {
     return streak;
   }
 
+  // Calcula la nueva racha de forma incremental al registrar un evento,
+  // comparando la fecha del nuevo evento con el último registro PREVIO.
+  // Importante: [previousLastPoop] debe ser el lastPoop anterior al evento
+  // que se está registrando, no el ya actualizado.
+  static int calculateIncrementalStreak({
+    required int currentStreak,
+    required DateTime? previousLastPoop,
+    required DateTime newEventDate,
+  }) {
+    if (previousLastPoop == null) {
+      // Primera deposición del usuario
+      return 1;
+    }
+
+    // Diferencia en días naturales (ignorando horas)
+    final newMidnight = DateTime(newEventDate.year, newEventDate.month, newEventDate.day);
+    final lastMidnight = DateTime(previousLastPoop.year, previousLastPoop.month, previousLastPoop.day);
+    final differenceInDays = newMidnight.difference(lastMidnight).inDays;
+
+    if (differenceInDays == 0) {
+      // Mismo día: la racha se mantiene
+      return currentStreak == 0 ? 1 : currentStreak;
+    } else if (differenceInDays == 1) {
+      // Día siguiente: racha incrementada
+      return currentStreak + 1;
+    }
+    // Racha rota (hueco de más de un día o evento con fecha anterior)
+    return 1;
+  }
+
   factory KKEvent.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
     final consistencyVal = Consistency.fromString(data['consistency'] ?? 'Normal');

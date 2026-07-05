@@ -11,7 +11,7 @@
 
 ## Fase 1 — Bugs que rompen funcionalidad en producción (prioridad máxima)
 
-### [ ] 1.1 Las rachas nunca incrementan con Firebase real 🔴
+### [x] 1.1 Las rachas nunca incrementan con Firebase real 🔴 — HECHO (2026-07-05)
 - **Dónde**: `flutter_app/lib/services/database_service.dart:324` (batch en `addEvent`) y `:896-916` (`_updateUserStreaks`).
 - **Problema**: el batch escribe `lastPoop = timestamp del nuevo evento` **antes** de llamar a `_updateUserStreaks`, que luego lee ese mismo `lastPoop` para comparar días. La diferencia de días siempre es 0 → la racha se queda congelada para siempre. En modo mock no se nota porque recalcula desde la lista completa.
 - **Fix**: leer el `lastPoop` previo antes del `batch.commit()` (o calcular la racha dentro del propio batch) y pasar el valor antiguo a `_updateUserStreaks`.

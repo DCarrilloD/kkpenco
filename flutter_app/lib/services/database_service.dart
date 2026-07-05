@@ -298,7 +298,7 @@ class DatabaseService {
       if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
       await addKcoins(event.userId, kcoinsReward);
 
-      await _updateUserStreaks(event.userId, event.displayName, isDeletion: false, newEventDate: event.timestamp);
+      await _updateUserStreaks(event.userId, event.displayName);
       await _updateActiveDuelsCount(event.userId);
       await _checkAndUnlockAchievements(event);
       _saveMockData();
@@ -315,15 +315,32 @@ class DatabaseService {
         .collection('monthly_stats')
         .doc(monthStr);
 
+    // Leer el lastPoop PREVIO antes de que el batch lo sobrescriba: la racha
+    // se compara contra el registro anterior, no contra el evento nuevo.
+    final userSnap = await userRef.get();
+    final userData = userSnap.data();
+    final previousLastPoop = (userData?['lastPoop'] as Timestamp?)?.toDate();
+    final currentStreak = userData?['currentStreak'] as int? ?? 0;
+    final maxStreak = userData?['maxStreak'] as int? ?? 0;
+
+    final newStreak = KKEvent.calculateIncrementalStreak(
+      currentStreak: currentStreak,
+      previousLastPoop: previousLastPoop,
+      newEventDate: event.timestamp,
+    );
+
     final batch = _db.batch();
 
     // Registrar el evento con ID autogenerado
     batch.set(eventRef, event);
 
     // Incrementar el contador de deposiciones del usuario de por vida
+    // y actualizar rachas en la misma escritura atómica
     batch.update(userRef, {
       'poopCount': FieldValue.increment(1),
       'lastPoop': Timestamp.fromDate(event.timestamp),
+      'currentStreak': newStreak,
+      'maxStreak': newStreak > maxStreak ? newStreak : maxStreak,
     });
 
     // Incrementar estadísticas mensuales de forma atómica
@@ -341,7 +358,7 @@ class DatabaseService {
     if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
     await addKcoins(event.userId, kcoinsReward);
 
-    await _updateUserStreaks(event.userId, event.displayName, isDeletion: false, newEventDate: event.timestamp);
+    // La racha ya se actualizó dentro del batch con el lastPoop previo
     await _updateActiveDuelsCount(event.userId);
     await _checkAndUnlockAchievements(event);
   }
@@ -410,7 +427,7 @@ class DatabaseService {
         }
       }
 
-      await _updateUserStreaks(event.userId, event.displayName, isDeletion: true);
+      await _updateUserStreaks(event.userId, event.displayName);
       await _saveMockData();
       return;
     }
@@ -443,7 +460,7 @@ class DatabaseService {
 
     await batch.commit();
 
-    await _updateUserStreaks(event.userId, event.displayName, isDeletion: true);
+    await _updateUserStreaks(event.userId, event.displayName);
   }
 
   // Obtener flujo de eventos del usuario actual
@@ -849,13 +866,9 @@ class DatabaseService {
     });
   }
 
-  // Recalcular y actualizar rachas en base de datos de forma incremental y O(1)
-  Future<void> _updateUserStreaks(
-    String userId,
-    String? username, {
-    bool isDeletion = false,
-    DateTime? newEventDate,
-  }) async {
+  // Recalcular y actualizar rachas en base de datos (modo mock y borrados;
+  // el alta con Firebase real actualiza la racha dentro del batch de addEvent)
+  Future<void> _updateUserStreaks(String userId, String? username) async {
     try {
       if (useMockData) {
         final userEvents = _mockEvents.where((e) => e.userId == userId).toList();
@@ -886,61 +899,24 @@ class DatabaseService {
         return;
       }
 
-      // Firestore real (Optimizado O(1))
+      // Firestore real: solo se llama al borrar eventos. Al agregar, la racha
+      // se calcula dentro del batch de addEvent con el lastPoop previo.
       final userRef = _db.collection('users').doc(userId);
-      int finalStreak = 0;
-      int finalMaxStreak = 0;
+      final userSnap = await userRef.get();
+      final currentStreak = userSnap.data()?['currentStreak'] as int? ?? 0;
+      final currentMax = userSnap.data()?['maxStreak'] as int? ?? 0;
 
-      if (!isDeletion && newEventDate != null) {
-        // Caso común: Agregar evento (Cálculo Incremental)
-        final userSnap = await userRef.get();
-        final data = userSnap.data();
-        
-        final currentStreak = data?['currentStreak'] as int? ?? 0;
-        final maxStreak = data?['maxStreak'] as int? ?? 0;
-        final lastPoopTimestamp = data?['lastPoop'] as Timestamp?;
-
-        if (lastPoopTimestamp == null) {
-          // Es su primera deposición
-          finalStreak = 1;
-        } else {
-          final lastPoopDate = lastPoopTimestamp.toDate();
-          
-          // Calcular diferencia en días (ignorando horas)
-          final todayMidnight = DateTime(newEventDate.year, newEventDate.month, newEventDate.day);
-          final lastMidnight = DateTime(lastPoopDate.year, lastPoopDate.month, lastPoopDate.day);
-          final differenceInDays = todayMidnight.difference(lastMidnight).inDays;
-
-          if (differenceInDays == 0) {
-            // Misma fecha del día, la racha se mantiene
-            finalStreak = currentStreak == 0 ? 1 : currentStreak;
-          } else if (differenceInDays == 1) {
-            // El día siguiente, racha incrementada
-            finalStreak = currentStreak + 1;
-          } else {
-            // Racha rota, se reinicia en 1
-            finalStreak = 1;
-          }
-        }
-        finalMaxStreak = finalStreak > maxStreak ? finalStreak : maxStreak;
-      } else {
-        // Caso raro: Borrado de evento
-        final userSnap = await userRef.get();
-        final currentStreak = userSnap.data()?['currentStreak'] as int? ?? 0;
-        final currentMax = userSnap.data()?['maxStreak'] as int? ?? 0;
-
-        // Consultar dinámicamente limitando al tamaño de la racha actual + 2
-        final limitCount = currentStreak > 0 ? (currentStreak + 2) : 5;
-        final eventsSnapshot = await _db
-            .collection('events')
-            .where('userId', isEqualTo: userId)
-            .orderBy('timestamp', descending: true)
-            .limit(limitCount)
-            .get();
-        final events = eventsSnapshot.docs.map((doc) => KKEvent.fromFirestore(doc)).toList();
-        finalStreak = KKEvent.calculateStreak(events);
-        finalMaxStreak = finalStreak > currentMax ? finalStreak : currentMax;
-      }
+      // Consultar dinámicamente limitando al tamaño de la racha actual + 2
+      final limitCount = currentStreak > 0 ? (currentStreak + 2) : 5;
+      final eventsSnapshot = await _db
+          .collection('events')
+          .where('userId', isEqualTo: userId)
+          .orderBy('timestamp', descending: true)
+          .limit(limitCount)
+          .get();
+      final events = eventsSnapshot.docs.map((doc) => KKEvent.fromFirestore(doc)).toList();
+      final finalStreak = KKEvent.calculateStreak(events);
+      final finalMaxStreak = finalStreak > currentMax ? finalStreak : currentMax;
 
       // Actualizar el documento de usuario
       await userRef.set({
