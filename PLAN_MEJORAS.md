@@ -76,14 +76,14 @@
 - **Fix**: guardar `DateTime` de inicio y derivar `_stopwatchSeconds` de `DateTime.now().difference(inicio)` al reanudar.
 - **Esfuerzo**: pequeño.
 
-### [ ] 2.5 GPS automático en cada arranque 🟡
+### [x] 2.5 GPS automático en cada arranque 🟡 — HECHO (2026-07-06)
 - **Dónde**: `tracker_screen.dart:76-93` (`_loadAutoGeolocatePreference`).
-- **Fix**: probar primero `Geolocator.getLastKnownPosition()` (coste cero) y solo pedir posición fresca al guardar el evento.
+- **Fix aplicado**: al arrancar con autolocalización, nuevo `_getLastKnownLocation()` usa `Geolocator.getLastKnownPosition()` (coste cero, sin encender el GPS) en vez del fix fresco; la posición fresca se pide en `_saveEvent` vía `_refreshFreshLocation()` (best-effort, timeout 5 s, conserva la última conocida si falla). Sin prompt de permiso en el arranque (solo `checkPermission`).
 
-### [ ] 2.6 `stats_panel_screen` descarga todos los eventos sin límite 🟡
+### [x] 2.6 `stats_panel_screen` descarga todos los eventos sin límite 🟡 — HECHO (2026-07-06)
 - **Dónde**: `flutter_app/lib/screens/stats_panel_screen.dart:91`.
 - **Nota**: los exports CSV/JSON de `profile_screen.dart:363,419` sí necesitan todo legítimamente.
-- **Fix**: límite generoso o filtrar por año seleccionado en la query.
+- **Fix aplicado**: `getAllEvents(limit: 2000)` (cap generoso; ordena por fecha desc, conserva lo reciente). Los exports de admin siguen sin límite.
 
 ---
 

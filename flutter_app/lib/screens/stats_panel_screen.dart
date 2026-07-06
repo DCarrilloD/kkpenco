@@ -88,7 +88,11 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         _errorMessage = null;
       });
 
-      final events = await _dbService.getAllEvents();
+      // Cap generoso: el panel agrega los eventos del grupo (por eso no se puede
+      // filtrar por un solo usuario en la query) y los filtra por año en memoria.
+      // getAllEvents ordena por fecha desc, así que este límite conserva lo más
+      // reciente y evita descargar el histórico entero sin tope (mejora 2.6).
+      final events = await _dbService.getAllEvents(limit: 2000);
       
       // Determinar los años disponibles en los registros
       final Set<String> yearsSet = {};

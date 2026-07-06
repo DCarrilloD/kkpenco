@@ -83,10 +83,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
         _autoGeolocate = prefs.getBool('auto_geolocate') ?? false;
       });
       if (_autoGeolocate) {
-        // Ejecutar obtención de GPS tras el primer frame
+        // Al arrancar solo usamos la última posición conocida (coste cero, sin
+        // encender el GPS). La posición fresca se pide al guardar (_saveEvent).
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            _getCurrentLocation();
+            _getLastKnownLocation();
           }
         });
       }
@@ -210,6 +211,59 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
       debugPrint('Error en fallback de IP: $e');
     }
     return null;
+  }
+
+  // Ubicación de arranque con autolocalización: usa la última posición conocida
+  // que la cachea el SO (coste cero, no enciende el GPS). No muestra snackbars
+  // ni pide permiso: si no hay permiso o posición previa, simplemente no fija nada.
+  Future<void> _getLastKnownLocation() async {
+    if (useMockData) {
+      // En simulación fijamos unas coordenadas de ejemplo, sin snackbar.
+      setState(() {
+        _latitude = 40.4115 + (DateTime.now().millisecond % 100) * 0.0001;
+        _longitude = -3.7122 - (DateTime.now().second % 60) * 0.0001;
+      });
+      return;
+    }
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null && mounted) {
+        setState(() {
+          _latitude = last.latitude;
+          _longitude = last.longitude;
+        });
+      }
+    } catch (e) {
+      debugPrint('No se pudo obtener la última ubicación conocida: $e');
+    }
+  }
+
+  // Posición fresca (enciende el GPS) que se pide al guardar el evento cuando la
+  // autolocalización está activa. Best-effort con timeout corto; si falla se
+  // conservan las coordenadas ya fijadas (última conocida del arranque).
+  Future<void> _refreshFreshLocation() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      _latitude = pos.latitude;
+      _longitude = pos.longitude;
+    } catch (e) {
+      debugPrint('No se pudo refrescar la ubicación al guardar: $e');
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -346,6 +400,12 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     });
 
     try {
+      // Con autolocalización activa, la posición fresca se pide aquí (no en cada
+      // arranque): es el momento en que la ubicación importa de verdad.
+      if (_autoGeolocate && !useMockData) {
+        await _refreshFreshLocation();
+      }
+
       final durationSecs = _stopwatchSeconds > 0 ? _stopwatchSeconds : (_durationMinutes * 60).toInt();
 
       final newEvent = KKEvent(
