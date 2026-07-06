@@ -40,7 +40,7 @@ dependencies:
   flutter_displaymode: ^0.7.0
   flame: ^1.37.0
   flame_audio: ^2.12.1
-  connectivity_plus: ^6.1.0
+  connectivity_plus: ^7.2.0
 
 dev_dependencies:
   flutter_test:
