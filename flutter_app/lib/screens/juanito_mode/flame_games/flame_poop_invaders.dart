@@ -40,6 +40,10 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   final List<int> bossSpawnTimes = [30, 75, 135, 210, 295, 390, 495, 610];
   double ufoTimer = 0.0;
 
+  // Gracia al inicio de cada oleada: durante estos segundos los enemigos no
+  // disparan (evita muertes injustas nada más aparecer, sobre todo tras un jefe)
+  double waveGraceTimer = 0.0;
+
   // Screen shake state
   double shakeTimer = 0.0;
   double shakeIntensity = 0.0;
@@ -97,6 +101,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
 
     gameTimeSeconds += dt;
     ufoTimer += dt;
+    if (waveGraceTimer > 0) waveGraceTimer -= dt;
     onTimeChanged(gameTimeSeconds);
 
     if (shakeTimer > 0) {
@@ -140,10 +145,14 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   void _spawnWave() {
     addFloatingText('¡OLEADA $wave! 👾', Vector2(size.x / 2, size.y * 0.45), Colors.greenAccent, size: 24);
 
+    // Respiro al empezar la oleada: nadie dispara durante ~1.4 s. Importa sobre
+    // todo en la oleada que sigue a un jefe, que antes te mataba al aparecer.
+    waveGraceTimer = 1.4;
+
     // Oleada 1 más suave: 8 enemigos en vez de 10 para no abrumar al empezar
     int cols = wave == 1 ? 4 : 5;
     int rows = 2;
-    double speedX = 60.0 + wave * 10.0;
+    double speedX = 50.0 + wave * 6.0;
     bool isAlienWave = nextBossIndex > 1;
     double startX = size.x * (1 - (cols - 1) * 0.17) / 2;
 
@@ -173,7 +182,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     isBossActive = true;
 
     String bType = 'fire';
-    int maxHp = 30 + bossNumber * 10;
+    int maxHp = 26 + bossNumber * 8;
     if (activeBuffCategory == AchievementCategory.social) {
       maxHp = (maxHp * 0.85).toInt();
     }
@@ -258,6 +267,14 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   void shakeScreen({double duration = 0.2, double intensity = 6.0}) {
     shakeTimer = duration;
     shakeIntensity = intensity;
+  }
+
+  // Elimina los láseres enemigos en vuelo (se usa al morir un jefe para que la
+  // oleada siguiente no empiece con proyectiles cayendo encima del jugador).
+  void clearEnemyLasers() {
+    for (final laser in children.whereType<LaserComponent>().where((l) => !l.fromPlayer).toList()) {
+      laser.removeFromParent();
+    }
   }
 
   @override
@@ -707,9 +724,11 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     if (type == 'boss') {
       _bossAttacks(dt);
     } else if (type != 'ufo') {
-      // Promedio de disparos por segundo por cada enemigo. En oleada 1: 0.2 tiros/seg.
-      double shotsPerSecond = 0.2 + game.wave * 0.05;
-      if (Random().nextDouble() < shotsPerSecond * dt) { 
+      // Cadencia por enemigo: base más baja, crecimiento más suave y con tope
+      // para que las oleadas altas no se vuelvan un muro de balas. Respeta la
+      // gracia del inicio de oleada.
+      double shotsPerSecond = (0.13 + game.wave * 0.03).clamp(0.0, 0.5);
+      if (game.waveGraceTimer <= 0 && Random().nextDouble() < shotsPerSecond * dt) {
          game.spawnLaser(pos: position.clone()..y += size.y / 2, vy: 200.0, fromPlayer: false);
       }
       if (position.y >= game.size.y * 0.84) {
@@ -736,8 +755,8 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
       game.spawnLaser(pos: position.clone()..x += (Random().nextDouble() - 0.5) * 60, vy: 180.0, fromPlayer: false, type: 'acid');
     }
 
-    // El Jefe lanza un láser básico aleatoriamente (~1.2 veces por segundo, o 2.4 si está furioso)
-    double baseAttackChance = healthPct < 0.4 ? 2.4 : 1.2;
+    // El Jefe lanza un láser básico aleatoriamente (~1 vez por segundo, o 2 si está furioso)
+    double baseAttackChance = healthPct < 0.4 ? 2.0 : 1.0;
     if (Random().nextDouble() < baseAttackChance * dt) {
       game.spawnLaser(pos: position.clone()..y += 30, vy: 220.0, fromPlayer: false);
       if (healthPct < 0.4) {
@@ -776,6 +795,7 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
       GameAudio.play('explosion.wav', volume: 0.12);
       if (type == 'boss') {
         game.isBossActive = false;
+        game.clearEnemyLasers(); // pantalla limpia para la siguiente oleada
         int reward = 500 + (game.nextBossIndex - 1) * 100;
         game.addScore(reward);
         game.spawnParticles(position.clone(), '🔥', 20, speed: 4.0);
