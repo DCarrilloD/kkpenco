@@ -31,6 +31,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   late final Stream<Map<String, String>> _typingStream;
 
+  // Auto-scroll: recordar el último mensaje visto para distinguir un mensaje
+  // nuevo (baja al final) de una reacción o edición (no mueve el scroll).
+  String? _lastMessageId;
+  bool _didInitialScroll = false;
+
   @override
   void initState() {
     super.initState();
@@ -182,6 +187,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  // ¿El usuario está (casi) al final de la lista? Sin render aún se trata como
+  // "abajo" para que la primera carga baje al último mensaje.
+  bool _isNearBottom() {
+    if (!_scrollController.hasClients) return true;
+    final pos = _scrollController.position;
+    return (pos.maxScrollExtent - pos.pixels) < 200;
+  }
+
   void _showReactionsMenu(ChatMessage msg) {
     final currentUser = _authService.currentUser;
     if (currentUser == null) return;
@@ -321,8 +334,21 @@ class _ChatScreenState extends State<ChatScreen> {
                 }
                 final messages = snapshot.data ?? [];
 
-                // Desplazar al final tras renderizar
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                // Auto-scroll inteligente: baja al final solo si es la carga
+                // inicial, si el usuario ya estaba abajo, o si el mensaje nuevo
+                // es suyo. Una reacción/edición (mismo último id) no mueve nada,
+                // así que leer el historial no te arrastra al final.
+                final newestId = messages.isNotEmpty ? messages.last.id : null;
+                if (newestId != null && newestId != _lastMessageId) {
+                  final isMine = messages.last.userId == currentUser.uid;
+                  final wasAtBottom = _isNearBottom();
+                  if (!_didInitialScroll || wasAtBottom || isMine) {
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => _scrollToBottom());
+                  }
+                  _lastMessageId = newestId;
+                  _didInitialScroll = true;
+                }
 
                 if (messages.isEmpty) {
                   return Center(

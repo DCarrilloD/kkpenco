@@ -79,6 +79,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
   Future<void> _loadAutoGeolocatePreference() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
       setState(() {
         _autoGeolocate = prefs.getBool('auto_geolocate') ?? false;
       });
@@ -155,6 +156,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     });
     try {
       final res = await _dbService.getEventsPaged(user.uid, limit: 15);
+      if (!mounted) return;
       setState(() {
         _eventsList.clear();
         _eventsList.addAll(res.events);
@@ -164,9 +166,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     } catch (e) {
       debugPrint('Error loading events: $e');
     } finally {
-      setState(() {
-        _loadingHistory = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loadingHistory = false;
+        });
+      }
     }
   }
 
@@ -178,6 +182,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     });
     try {
       final res = await _dbService.getEventsPaged(user.uid, limit: 15, cursor: _lastCursor);
+      if (!mounted) return;
       setState(() {
         _eventsList.addAll(res.events);
         _lastCursor = res.cursor;
@@ -186,9 +191,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     } catch (e) {
       debugPrint('Error loading next events page: $e');
     } finally {
-      setState(() {
-        _loadingHistory = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loadingHistory = false;
+        });
+      }
     }
   }
 
@@ -277,6 +284,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
       if (useMockData) {
         // Simular obtención de coordenadas (ej: Madrid Río)
         await Future.delayed(const Duration(milliseconds: 1000));
+        if (!mounted) return;
         setState(() {
           _latitude = 40.4115 + (DateTime.now().millisecond % 100) * 0.0001;
           _longitude = -3.7122 - (DateTime.now().second % 60) * 0.0001;

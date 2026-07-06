@@ -107,16 +107,6 @@ class PushNotificationService {
     );
   }
 
-  // Permite programar un recordatorio local
-  Future<void> scheduleLocalReminder(String title, String body, Duration delay) async {
-    // Usando un retardo simple. Para alarmas exactas se requiere timezone.
-    // Esto es un ejemplo sencillo que muestra la notificación después de X tiempo (simulado vía Future.delayed si la app está abierta)
-    // En producción se usa zonedSchedule de flutter_local_notifications.
-    Future.delayed(delay, () {
-      _showLocalNotification(title, body);
-    });
-  }
-
   Future<String?> getToken() async {
     return await _firebaseMessaging.getToken();
   }

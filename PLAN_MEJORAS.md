@@ -111,10 +111,11 @@
 
 ## Fase 4 — Limpieza y fallos menores
 
-- [ ] **`setState` tras `await` sin `mounted`** en `_loadFirstPage`, `_loadNextPage`, `_loadAutoGeolocatePreference` y la rama mock de `_getCurrentLocation` (`tracker_screen.dart`) → excepciones "setState after dispose" esporádicas.
-- [ ] **Auto-scroll del chat en cada snapshot** (`chat_screen.dart:300`): cualquier reacción o mensaje nuevo arrastra al final aunque estés leyendo historial. Solo hacer scroll si ya estabas abajo o el mensaje es tuyo.
-- [ ] **`signUp` con lecturas fuera del `try`** (`auth_service.dart:83`): errores de red muestran mensaje crudo. Registro abierto (whitelist comentada) y "primer usuario = admin" es una carrera en cliente — reactivar whitelist o cerrar registro por reglas.
-- [ ] **`scheduleLocalReminder`** (`push_notification_service.dart:87`) usa `Future.delayed` (solo funciona con la app abierta) — migrar a `zonedSchedule` o eliminar.
+Toda la Fase 4 HECHA (2026-07-06):
+- [x] **`setState` tras `await` sin `mounted`** en `_loadFirstPage`, `_loadNextPage`, `_loadAutoGeolocatePreference` y la rama mock de `_getCurrentLocation` (`tracker_screen.dart`) → añadidos guards `if (!mounted) return;` / `if (mounted)` en el `finally`.
+- [x] **Auto-scroll del chat en cada snapshot** (`chat_screen.dart`): ahora baja al final solo en la carga inicial, si el usuario ya estaba abajo (`_isNearBottom`), o si el último mensaje es suyo; una reacción/edición (mismo último id) no mueve el scroll.
+- [x] **`signUp` con lecturas fuera del `try`** (`auth_service.dart`): eliminada la lectura previa `isFirstUser` y el rol `admin` (las reglas rechazan crear con `role:'admin'`, así que hacía fallar el propio registro del primer usuario); ahora siempre `role:'user'` (admin manual por consola) y `catch` genérico con mensaje amable ante errores de red/Firestore. Whitelist sigue desactivada.
+- [x] **`scheduleLocalReminder`** (`push_notification_service.dart`): era código muerto (sin llamadas) → eliminado.
 
 ---
 

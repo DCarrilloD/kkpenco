@@ -79,54 +79,33 @@ class AuthService {
 
     final cleanEmail = email.trim().toLowerCase();
 
-    // 1. Verificar si la colección de usuarios está vacía (primer registro = admin)
-    final usersSnapshot = await _db.collection('users').limit(1).get();
-    final bool isFirstUser = usersSnapshot.docs.isEmpty;
-
-    String role = 'user';
-    if (!isFirstUser) {
-      // 2. Temporalmente desactivamos la lista blanca para permitir libre registro
-      /*
-      final authDoc = await _db.collection('authorized_emails').doc(cleanEmail).get();
-      if (!authDoc.exists) {
-        throw Exception('Este correo electrónico no está autorizado en esta aplicación privada. Pídele al administrador que te añada.');
-      }
-      final authData = authDoc.data();
-      role = authData?['role'] ?? 'user';
-      */
-      role = 'user'; // Asignamos rol básico por defecto
-    } else {
-      role = 'admin';
-    }
-
+    // El rol siempre se crea como 'user': las reglas de Firestore rechazan crear
+    // el documento con role:'admin' (ver firestore.rules), así que el admin de un
+    // despliegue nuevo se eleva manualmente desde la consola. Antes se intentaba
+    // 'admin' para el primer usuario, lo que hacía fallar su propio registro.
+    // (La lista blanca sigue desactivada; si se reactiva, habrá que repensar la
+    // lectura previa al registro.)
     try {
-      // 3. Crear el usuario en Firebase Auth
       final userCredential = await _auth.createUserWithEmailAndPassword(
         email: cleanEmail,
         password: password,
       );
 
-      // 4. Actualizar displayName en Firebase Auth
       await userCredential.user?.updateDisplayName(username);
 
-      // 5. Crear documento de usuario en Firestore con su rol
       await _db.collection('users').doc(userCredential.user!.uid).set({
         'username': username,
         'email': cleanEmail,
-        'role': role,
+        'role': 'user',
         'createdAt': FieldValue.serverTimestamp(),
       });
-
-      // 6. Marcar como registrado en la lista blanca si no es el primer usuario
-      /*
-      if (!isFirstUser) {
-        await _db.collection('authorized_emails').doc(cleanEmail).update({'registered': true});
-      }
-      */
 
       return userCredential;
     } on FirebaseAuthException catch (e) {
       throw Exception(_translateAuthError(e.code));
+    } catch (e) {
+      // Errores de red o de Firestore: mensaje amable en vez del crudo.
+      throw Exception('No se pudo completar el registro. Revisa tu conexión e inténtalo de nuevo.');
     }
   }
 
