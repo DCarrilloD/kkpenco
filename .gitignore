@@ -14,3 +14,7 @@ venv.bak/
 *.sqlite
 *.db
 .DS_Store
+
+# Artefactos de compilación Android exportados a la raíz
+*.aab
+*.apk
