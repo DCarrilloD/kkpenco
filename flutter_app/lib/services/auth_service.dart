@@ -165,10 +165,12 @@ class AuthService {
 
     String? photoUrl = user.photoURL;
 
-    // Subir imagen si existe
+    // Subir imagen si existe. Fijamos contentType explícito para que las reglas
+    // de Storage (que exigen image/*) acepten la subida aunque el archivo del
+    // picker venga como heic/octet-stream.
     if (avatarImage != null) {
       final ref = FirebaseStorage.instance.ref().child('avatars/${user.uid}.jpg');
-      await ref.putFile(avatarImage);
+      await ref.putFile(avatarImage, SettableMetadata(contentType: 'image/jpeg'));
       photoUrl = await ref.getDownloadURL();
     }
 
