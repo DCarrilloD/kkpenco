@@ -224,14 +224,10 @@ class AuthService {
     );
     await user.reauthenticateWithCredential(cred);
 
-    // Actualizar email via verification (recomendado) o directo si lo soporta
-    try {
-      await user.verifyBeforeUpdateEmail(newEmail);
-    } catch (e) {
-      // Intento por método anterior si no soporta verifyBeforeUpdateEmail
-      // ignore: deprecated_member_use
-      await user.updateEmail(newEmail);
-    }
+    // Actualizar email vía verificación: Firebase envía un correo de confirmación
+    // al nuevo email y el cambio se aplica al pulsar el enlace.
+    // (firebase_auth 6 eliminó el antiguo updateEmail directo; ya no hay fallback.)
+    await user.verifyBeforeUpdateEmail(newEmail);
 
     // Actualizar también en firestore
     await _db.collection('users').doc(user.uid).update({'email': newEmail.trim().toLowerCase()});

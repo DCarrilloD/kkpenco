@@ -13,9 +13,9 @@ dependencies:
     sdk: flutter
   http: ^1.2.0
   shared_preferences: ^2.2.2
-  firebase_core: ^3.10.0
-  firebase_auth: ^5.4.0
-  cloud_firestore: ^5.6.0
+  firebase_core: ^4.11.0
+  firebase_auth: ^6.5.4
+  cloud_firestore: ^6.6.0
   intl: ^0.19.0
   google_fonts: ^6.2.1
   csv: ^6.0.0
@@ -32,10 +32,10 @@ dependencies:
   latlong2: ^0.9.0
   home_widget: ^0.7.0
   file_picker: ^8.1.2
-  firebase_messaging: ^15.2.10
+  firebase_messaging: ^16.4.1
   flutter_local_notifications: ^22.0.1
   flutter_riverpod: ^3.3.2
-  firebase_storage: ^12.4.10
+  firebase_storage: ^13.4.3
   cached_network_image: ^3.4.1
   flutter_displaymode: ^0.7.0
   flame: ^1.37.0
