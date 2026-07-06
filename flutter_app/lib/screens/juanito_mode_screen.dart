@@ -18,19 +18,15 @@ class JuanitoModeScreen extends StatefulWidget {
   const JuanitoModeScreen({super.key});
 
   // Estado global estático del volumen/mute
-  static bool isMuted = false;
+  static final ValueNotifier<bool> isMutedNotifier = ValueNotifier<bool>(false);
 
-  // La pantalla activa registra aquí un hook para reaccionar al cambio de mute.
-  // Necesario porque el botón de silencio del juego es estático (solo togglea
-  // el flag y afecta a los SFX vía GameAudio), pero la música en bucle vive en
-  // una instancia y hay que pararla/reanudarla explícitamente.
-  static VoidCallback? onMuteChanged;
+  static bool get isMuted => isMutedNotifier.value;
+  static set isMuted(bool val) => isMutedNotifier.value = val;
 
   static Future<void> toggleMute() async {
-    isMuted = !isMuted;
-    onMuteChanged?.call(); // refresca la música al instante, no solo los SFX
+    isMutedNotifier.value = !isMutedNotifier.value;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('games_muted', isMuted);
+    await prefs.setBool('games_muted', isMutedNotifier.value);
   }
 
   @override
@@ -84,7 +80,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    JuanitoModeScreen.onMuteChanged = _handleMuteChanged;
+    JuanitoModeScreen.isMutedNotifier.addListener(_handleMuteChanged);
     _stopwatch = Stopwatch()..start();
     _startClock();
 
@@ -139,6 +135,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     ]).then((_) {
       debugPrint('Audios de Flame precargados con éxito.');
     }).catchError((e) {
+      // Precarga de SFX en segundo plano: si falla, los efectos simplemente no
+      // sonarán; no tiene sentido interrumpir al usuario con un error.
       debugPrint('Error precargando audios de Flame: $e');
     });
   }
@@ -146,15 +144,16 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   // El botón de silencio (estático) togglea isMuted; aquí paramos o reanudamos
   // la música en bucle en consecuencia (los SFX ya lo respetan en GameAudio).
   void _handleMuteChanged() {
-    if (mounted) _updateMusicPlayback();
+    if (mounted) {
+      setState(() {});
+      _updateMusicPlayback();
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    if (JuanitoModeScreen.onMuteChanged == _handleMuteChanged) {
-      JuanitoModeScreen.onMuteChanged = null;
-    }
+    JuanitoModeScreen.isMutedNotifier.removeListener(_handleMuteChanged);
     _timer?.cancel();
     _timeNotifier.dispose();
     _soundAnimController.dispose();
@@ -175,11 +174,20 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   }
 
   Future<void> _saveHighScore(String key, int score) async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentHigh = prefs.getInt('high_score_$key') ?? 0;
-    if (score > currentHigh) {
-      await prefs.setInt('high_score_$key', score);
-      await _loadHighScores();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final currentHigh = prefs.getInt('high_score_$key') ?? 0;
+      if (score > currentHigh) {
+        await prefs.setInt('high_score_$key', score);
+        await _loadHighScores();
+      }
+    } catch (e) {
+      debugPrint('Error guardando highScore ($key): $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo guardar tu récord 😢')),
+        );
+      }
     }
   }
 
@@ -187,27 +195,44 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   Future<void> _loadZenProfile() async {
     final user = _authService.currentUser;
     if (user != null) {
-      final profile = await _dbService.getUserZenProfile(user.uid);
-      if (mounted) {
-        setState(() {
-          _kcoins = profile['kcoins'] ?? 0;
-          _equippedSkin = profile['equippedSkin'] ?? '💩';
-          _unlockedSkins = List<String>.from(profile['unlockedSkins'] ?? ['💩']);
-          
-          final powerups = profile['activePowerups'] as Map<String, dynamic>? ?? {};
-          _hasInitialSoapShield = powerups['shield'] == true;
-          _hasInitialSpring = powerups['spring'] == true;
-          _hasFeverMagnet = powerups['magnet'] == true;
-          _hasExtraLife = powerups['life'] == true;
-          _hasImprovedMagnet = powerups['passive_magnet'] == true;
-          _hasLifeInsurance = powerups['passive_insurance'] == true;
+      try {
+        final profile = await _dbService.getUserZenProfile(user.uid);
+        if (mounted) {
+          setState(() {
+            _kcoins = (profile['kcoins'] as num?)?.toInt() ?? 0;
+            _equippedSkin = profile['equippedSkin']?.toString() ?? '💩';
+            
+            var rawSkins = profile['unlockedSkins'];
+            if (rawSkins is Iterable) {
+              _unlockedSkins = rawSkins.map((e) => e.toString()).toList();
+            } else {
+              _unlockedSkins = ['💩'];
+            }
+            
+            var powerups = profile['activePowerups'];
+            Map<String, dynamic> powerupsMap = {};
+            if (powerups is Map) {
+              powerupsMap = powerups.map((key, value) => MapEntry(key.toString(), value));
+            }
+            
+            _hasInitialSoapShield = powerupsMap['shield'] == true;
+            _hasInitialSpring = powerupsMap['spring'] == true;
+            _hasFeverMagnet = powerupsMap['magnet'] == true;
+            _hasExtraLife = powerupsMap['life'] == true;
+            _hasImprovedMagnet = powerupsMap['passive_magnet'] == true;
+            _hasLifeInsurance = powerupsMap['passive_insurance'] == true;
 
-          if (profile['equippedTitle'] != null) {
-            _activeBuffCategory = Achievement.getCategoryByTitle(profile['equippedTitle']);
-          } else {
-            _activeBuffCategory = null;
-          }
-        });
+            if (profile['equippedTitle'] != null) {
+              _activeBuffCategory = Achievement.getCategoryByTitle(profile['equippedTitle'].toString());
+            } else {
+              _activeBuffCategory = null;
+            }
+          });
+        }
+      } catch (e) {
+        // Carga en segundo plano: si falla, se conservan los valores por
+        // defecto sin molestar al usuario con un error técnico al entrar.
+        debugPrint('Error cargando perfil Zen: $e');
       }
     }
   }
@@ -235,10 +260,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   Future<void> _updateMusicPlayback() async {
     try {
       if (!_isMusicEnabled || JuanitoModeScreen.isMuted) {
-        if (_currentlyPlayingSource != null) {
-          await _audioPlayer.stop();
-          _currentlyPlayingSource = null;
-        }
+        await _audioPlayer.stop();
+        _currentlyPlayingSource = null;
         return;
       }
 
@@ -273,6 +296,8 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
       }
       _currentlyPlayingSource = targetSource;
     } catch (e) {
+      // Música de fondo: si falla la reproducción no es crítico ni accionable
+      // por el usuario, así que solo lo registramos.
       debugPrint('Error updating music playback: $e');
     }
   }
@@ -283,44 +308,64 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     final user = _authService.currentUser;
     if (user == null) return;
 
-    if (_unlockedSkins.contains(skin)) {
-      HapticFeedback.selectionClick();
-      await _dbService.equipSkin(user.uid, skin);
-      await _loadZenProfile();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('¡Aspecto "$skin" equipado con éxito! 🎭'),
-          backgroundColor: Colors.brown[700],
-          duration: const Duration(seconds: 1),
-        ),
-      );
-      return;
-    }
+    try {
+      if (_unlockedSkins.contains(skin)) {
+        HapticFeedback.selectionClick();
+        await _dbService.equipSkin(user.uid, skin);
+        await _loadZenProfile();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Aspecto "$skin" equipado con éxito! 🎭'),
+            backgroundColor: Colors.brown[700],
+            duration: const Duration(seconds: 1),
+          ),
+        );
+        return;
+      }
 
-    if (_kcoins < cost) {
-      HapticFeedback.vibrate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('¡No tienes suficientes Kakadólares! 💸 Registra KKs para ganar más.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
+      if (_kcoins < cost) {
+        HapticFeedback.vibrate();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡No tienes suficientes Kakadólares! 💸 Registra KKs para ganar más.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
 
-    HapticFeedback.mediumImpact();
-    final success = await _dbService.buySkin(user.uid, skin, cost);
-    if (success) {
-      await _dbService.equipSkin(user.uid, skin);
-      await _loadZenProfile();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('¡Aspecto "$skin" comprado y equipado! 🎉 -$cost Kakadólares.'),
-          backgroundColor: Colors.green[700],
-        ),
-      );
+      HapticFeedback.mediumImpact();
+      final success = await _dbService.buySkin(user.uid, skin, cost);
+      if (success) {
+        await _dbService.equipSkin(user.uid, skin);
+        await _loadZenProfile();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('¡Aspecto "$skin" comprado y equipado! 🎉 -$cost Kakadólares.'),
+            backgroundColor: Colors.green[700],
+          ),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al procesar la compra del aspecto.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Error comprando/equipando aspecto: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ocurrió un error inesperado. Inténtalo de nuevo.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
   }
 
@@ -328,73 +373,85 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     final user = _authService.currentUser;
     if (user == null) return;
 
-    if (_kcoins < cost) {
-      HapticFeedback.vibrate();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('¡No tienes suficientes Kakadólares! 💸'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
+    try {
+      if (_kcoins < cost) {
+        HapticFeedback.vibrate();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('¡No tienes suficientes Kakadólares! 💸'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
 
-    bool alreadyHas = false;
-    if (id == 'shield' && _hasInitialSoapShield) alreadyHas = true;
-    if (id == 'spring' && _hasInitialSpring) alreadyHas = true;
-    if (id == 'magnet' && _hasFeverMagnet) alreadyHas = true;
-    if (id == 'life' && _hasExtraLife) alreadyHas = true;
-    if (id == 'passive_magnet' && _hasImprovedMagnet) alreadyHas = true;
-    if (id == 'passive_insurance' && _hasLifeInsurance) alreadyHas = true;
+      bool alreadyHas = false;
+      if (id == 'shield' && _hasInitialSoapShield) alreadyHas = true;
+      if (id == 'spring' && _hasInitialSpring) alreadyHas = true;
+      if (id == 'magnet' && _hasFeverMagnet) alreadyHas = true;
+      if (id == 'life' && _hasExtraLife) alreadyHas = true;
+      if (id == 'passive_magnet' && _hasImprovedMagnet) alreadyHas = true;
+      if (id == 'passive_insurance' && _hasLifeInsurance) alreadyHas = true;
 
-    if (alreadyHas) {
+      if (alreadyHas) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('¡Ya tienes esta mejora activa o adquirida! 🛒'),
+            backgroundColor: Colors.amber[800],
+          ),
+        );
+        return;
+      }
+
+      HapticFeedback.mediumImpact();
+      
+      bool isPassive = id.startsWith('passive_');
+      String dbId = isPassive ? id.replaceAll('passive_', '') : id;
+      
+      bool success = await _dbService.buyPowerupTransaction(user.uid, dbId, cost, isPassive: isPassive);
+      
+      if (!success) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error al procesar la compra. Verifica tu conexión.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+        return;
+      }
+      
+      setState(() {
+        if (id == 'shield') _hasInitialSoapShield = true;
+        if (id == 'spring') _hasInitialSpring = true;
+        if (id == 'magnet') _hasFeverMagnet = true;
+        if (id == 'life') _hasExtraLife = true;
+        if (id == 'passive_magnet') _hasImprovedMagnet = true;
+        if (id == 'passive_insurance') _hasLifeInsurance = true;
+      });
+
+      await _loadZenProfile();
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('¡Ya tienes esta mejora activa o adquirida! 🛒'),
-          backgroundColor: Colors.amber[800],
+          content: Text(isPassive
+              ? '¡Mejora permanente activada! 🚀 -$cost Kakadólares.'
+              : '¡Power-up activado para tu próxima partida! 🚀 -$cost Kakadólares.'),
+          backgroundColor: Colors.blue[700],
         ),
       );
-      return;
+    } catch (e) {
+      debugPrint('Error comprando powerup: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Ocurrió un error inesperado. Inténtalo de nuevo.'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     }
-
-    HapticFeedback.mediumImpact();
-    
-    bool isPassive = id.startsWith('passive_');
-    String dbId = isPassive ? id.replaceAll('passive_', '') : id;
-    
-    bool success = await _dbService.buyPowerupTransaction(user.uid, dbId, cost, isPassive: isPassive);
-    
-    if (!success) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Error al procesar la compra. Verifica tu conexión.'),
-          backgroundColor: Colors.redAccent,
-        ),
-      );
-      return;
-    }
-    
-    setState(() {
-      if (id == 'shield') _hasInitialSoapShield = true;
-      if (id == 'spring') _hasInitialSpring = true;
-      if (id == 'magnet') _hasFeverMagnet = true;
-      if (id == 'life') _hasExtraLife = true;
-      if (id == 'passive_magnet') _hasImprovedMagnet = true;
-      if (id == 'passive_insurance') _hasLifeInsurance = true;
-    });
-
-    await _loadZenProfile();
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(isPassive
-            ? '¡Mejora permanente activada! 🚀 -$cost Kakadólares.'
-            : '¡Power-up activado para tu próxima partida! 🚀 -$cost Kakadólares.'),
-        backgroundColor: Colors.blue[700],
-      ),
-    );
   }
 
   void _selectGame(ActiveGame game) {

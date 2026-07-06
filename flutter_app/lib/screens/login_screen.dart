@@ -51,9 +51,18 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     } catch (e) {
+      debugPrint('Error en login/registro: $e');
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $_errorMessage'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {

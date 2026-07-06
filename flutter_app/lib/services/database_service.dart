@@ -1175,24 +1175,38 @@ class DatabaseService {
       };
     }
     
-    final doc = await _db.collection('users').doc(userId).get();
-    if (doc.exists) {
-      final data = doc.data();
-      return {
-        'kcoins': data?['kcoins'] ?? 0,
-        'equippedSkin': data?['equippedSkin'] ?? '💩',
-        'unlockedSkins': List<String>.from(data?['unlockedSkins'] ?? ['💩']),
-        'equippedTitle': data?['equippedTitle'],
-        'activePowerups': data?['activePowerups'] ?? {},
-      };
-    }
-    return {
+    // Perfil por defecto: se usa si el documento no existe o si la lectura de
+    // Firestore falla (sin conexión, primer arranque, etc.), para que entrar
+    // al Modo Juanito nunca reviente con un error visible al usuario.
+    Map<String, dynamic> defaultProfile() => {
       'kcoins': 0,
       'equippedSkin': '💩',
       'unlockedSkins': ['💩'],
       'equippedTitle': null,
       'activePowerups': {},
     };
+
+    try {
+      final doc = await _db.collection('users').doc(userId).get();
+      if (!doc.exists) return defaultProfile();
+      final data = doc.data();
+
+      List<String> unlockedSkins = ['💩'];
+      if (data?['unlockedSkins'] is Iterable) {
+        unlockedSkins = (data!['unlockedSkins'] as Iterable).map((e) => e.toString()).toList();
+      }
+
+      return {
+        'kcoins': data?['kcoins'] ?? 0,
+        'equippedSkin': data?['equippedSkin'] ?? '💩',
+        'unlockedSkins': unlockedSkins,
+        'equippedTitle': data?['equippedTitle'],
+        'activePowerups': data?['activePowerups'] ?? {},
+      };
+    } catch (e) {
+      debugPrint('Error leyendo perfil Zen de Firestore: $e');
+      return defaultProfile();
+    }
   }
 
   Future<void> addKcoins(String userId, int amount) async {
@@ -1237,7 +1251,7 @@ class DatabaseService {
   Future<bool> buySkin(String userId, String skin, int cost) async {
     try {
       final profile = await getUserZenProfile(userId);
-      final kcoins = profile['kcoins'] as int;
+      final kcoins = (profile['kcoins'] as num?)?.toInt() ?? 0;
       final unlocked = List<String>.from(profile['unlockedSkins']);
       
       if (kcoins < cost || unlocked.contains(skin)) {

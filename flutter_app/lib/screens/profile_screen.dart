@@ -78,6 +78,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       });
     } catch (e) {
       debugPrint('Error al guardar auto_geolocate en perfil: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo guardar la preferencia de geolocalización.'), backgroundColor: Colors.redAccent),
+        );
+      }
     }
   }
 
@@ -217,6 +222,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         }
                       } catch (e) {
                          debugPrint('Error picking image: $e');
+                         if (ctx.mounted) {
+                           ScaffoldMessenger.of(ctx).showSnackBar(
+                             const SnackBar(content: Text('No se pudo seleccionar la imagen.'), backgroundColor: Colors.redAccent),
+                           );
+                         }
                       }
                     },
                     child: CircleAvatar(
@@ -269,9 +279,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             Navigator.pop(ctx);
                           }
                         } catch (e) {
+                          debugPrint('Error al actualizar perfil: $e');
                           setModalState(() => isEditing = false);
                           if (ctx.mounted) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Error: $e')));
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              const SnackBar(content: Text('No se pudo actualizar el perfil. Inténtalo de nuevo.'), backgroundColor: Colors.redAccent),
+                            );
                           }
                         }
                       },
@@ -314,6 +327,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _errorMessage = e.toString().replaceAll('Exception: ', '');
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cambiar email: $_errorMessage'), backgroundColor: Colors.redAccent),
+        );
+      }
     } finally {
       setState(() {
         _isLoading = false;
@@ -346,6 +364,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _errorMessage = e.toString().replaceFirst('Exception: ', '');
       });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al cambiar contraseña: $_errorMessage'), backgroundColor: Colors.redAccent),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1257,6 +1280,11 @@ class _ChangeEmailForm extends StatelessWidget {
             const Text(
               'Cambiar Email',
               style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Por seguridad, introduce tu contraseña actual para verificar tu identidad antes de cambiar el correo.',
+              style: TextStyle(color: Colors.grey[400], fontSize: 12),
             ),
             const SizedBox(height: 16),
             TextFormField(
