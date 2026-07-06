@@ -757,9 +757,11 @@ class _StatsPanelScreenState extends State<StatsPanelScreen> {
         }
       } else {
         // Compartir nativamente en móviles
-        await Share.shareXFiles(
-          [XFile(path)],
-          text: 'Estadísticas de KKpenco 💩 ($_selectedYear) - Excel',
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(path)],
+            text: 'Estadísticas de KKpenco 💩 ($_selectedYear) - Excel',
+          ),
         );
       }
 

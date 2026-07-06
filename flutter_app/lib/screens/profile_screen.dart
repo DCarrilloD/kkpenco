@@ -388,9 +388,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await file.writeAsString(csvData);
 
       // Compartir archivo
-      await Share.shareXFiles(
-        [XFile(path)],
-        text: 'Exportación de Logs de KKpenco 💩',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path)],
+          text: 'Exportación de Logs de KKpenco 💩',
+        ),
       );
 
     } catch (e) {
@@ -445,9 +447,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
       await file.writeAsString(jsonString);
 
       // Compartir archivo
-      await Share.shareXFiles(
-        [XFile(path)],
-        text: 'Copia de Seguridad de KKpenco 💩',
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(path)],
+          text: 'Copia de Seguridad de KKpenco 💩',
+        ),
       );
 
     } catch (e) {
@@ -475,7 +479,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     try {
       // 1. Seleccionar archivo
-      final result = await FilePicker.platform.pickFiles(
+      final result = await FilePicker.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['json'],
       );
