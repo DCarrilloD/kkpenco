@@ -12,6 +12,10 @@ class SpriteRasterizer {
     paintFn(canvas);
     
     final picture = recorder.endRecording();
-    return await picture.toImage(width.ceil(), height.ceil());
+    final image = await picture.toImage(width.ceil(), height.ceil());
+    // El Picture es un recurso nativo: liberarlo tras rasterizar para no fugarlo
+    // en cada llamada (se invoca por cada láser/enemigo/sprite del juego).
+    picture.dispose();
+    return image;
   }
 }

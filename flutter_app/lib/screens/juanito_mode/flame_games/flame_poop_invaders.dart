@@ -363,6 +363,13 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
   }
 
   @override
+  void onRemove() {
+    cachedShipImage?.dispose();
+    cachedShipImage = null;
+    super.onRemove();
+  }
+
+  @override
   void update(double dt) {
     super.update(dt);
 
@@ -516,6 +523,15 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
     });
   }
 
+  @override
+  void onRemove() {
+    // Liberar la textura nativa: sin esto cada láser deja un ui.Image sin
+    // disponer y la memoria crece sin tope (ralentización progresiva).
+    cachedLaserImage?.dispose();
+    cachedLaserImage = null;
+    super.onRemove();
+  }
+
   void _disableAndPool() {
     removeFromParent();
   }
@@ -649,6 +665,16 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
         _drawEnemyVector(canvas, Offset(size.x, size.y), size.x / 2, isDamaged: true);
       });
     }
+  }
+
+  @override
+  void onRemove() {
+    // Liberar las texturas nativas del enemigo al morir/salir de pantalla.
+    cachedEnemyImage?.dispose();
+    cachedEnemyImage = null;
+    cachedDamagedEnemyImage?.dispose();
+    cachedDamagedEnemyImage = null;
+    super.onRemove();
   }
 
   @override

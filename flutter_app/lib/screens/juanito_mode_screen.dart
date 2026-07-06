@@ -20,8 +20,15 @@ class JuanitoModeScreen extends StatefulWidget {
   // Estado global estático del volumen/mute
   static bool isMuted = false;
 
+  // La pantalla activa registra aquí un hook para reaccionar al cambio de mute.
+  // Necesario porque el botón de silencio del juego es estático (solo togglea
+  // el flag y afecta a los SFX vía GameAudio), pero la música en bucle vive en
+  // una instancia y hay que pararla/reanudarla explícitamente.
+  static VoidCallback? onMuteChanged;
+
   static Future<void> toggleMute() async {
     isMuted = !isMuted;
+    onMuteChanged?.call(); // refresca la música al instante, no solo los SFX
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('games_muted', isMuted);
   }
@@ -77,6 +84,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    JuanitoModeScreen.onMuteChanged = _handleMuteChanged;
     _stopwatch = Stopwatch()..start();
     _startClock();
 
@@ -135,9 +143,18 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     });
   }
 
+  // El botón de silencio (estático) togglea isMuted; aquí paramos o reanudamos
+  // la música en bucle en consecuencia (los SFX ya lo respetan en GameAudio).
+  void _handleMuteChanged() {
+    if (mounted) _updateMusicPlayback();
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (JuanitoModeScreen.onMuteChanged == _handleMuteChanged) {
+      JuanitoModeScreen.onMuteChanged = null;
+    }
     _timer?.cancel();
     _timeNotifier.dispose();
     _soundAnimController.dispose();
