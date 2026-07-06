@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KKpenco is a humorous social "poop tracker" Flutter app (Spanish-language UI) backed by Firebase (Auth, Firestore, Storage, Messaging). It is a rewrite of an older Flet/Python app. The actual Flutter project lives in `flutter_app/` — run all commands from that directory.
 
-Note: `.github/workflows/build.yml` still builds the legacy Flet app and references files (`mobile_app/`, `requirements.txt`) that no longer exist. It is stale; do not use it as a reference for how to build.
+CI: `.github/workflows/build.yml` is a Flutter workflow (runs from `flutter_app/`: `flutter pub get` → `analyze --no-fatal-infos` → `test` → `build apk --release`, uploads the APK) pinned to the same stable Flutter version the project targets. The old Flet workflow and its files (`mobile_app/`, `requirements.txt`) are gone.
 
 ## Commands
 

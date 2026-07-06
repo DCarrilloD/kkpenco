@@ -121,7 +121,9 @@ Toda la Fase 4 HECHA (2026-07-06):
 
 ## Fase 5 — Actualización de dependencias y tecnologías
 
-### [ ] 5.1 Actualizar Flutter y dependencias 🟡 (añadido 2026-07-05)
+### [x] 5.1 Actualizar Flutter y dependencias 🟡 — HECHO (2026-07-06, rama `fase5-deps`)
+- **Resumen**: Flutter 3.41.4 → 3.44.4; ~50 deps a su parche + 8 grupos de mayores. Un commit por grupo, gate `analyze` + 35 tests + `build apk --debug` tras cada uno. Grupo 1 Firebase en bloque (core 4 / firestore·auth 6 / messaging 16 / storage 13; R1 `updateEmail` quitado). flutter_lints 6 sin lints nuevos. flutter_map 8.3.1 + latlong2 0.10 sin tocar código (R2 obsoleto: `subdomains` no se eliminó). share_plus 12 + file_picker 11 **acoplados por win32** (share_plus 13 exigía file_picker 12-beta, evitada): R3 migrado a `SharePlus.instance.share(ShareParams)`, `FilePicker.pickFiles` estático. connectivity_plus 7 (R4 ok). home_widget 0.9.3 sin cambios nativos (widget clásico, no Glance; clases del manifest siguen existiendo). csv 8 `CsvEncoder` (R6), intl 0.20, google_fonts 8, audioplayers 6.8.1. Workflow CI ya era de Flutter (pin subido a 3.44.4).
+- **Pendiente (solo prueba manual en Android real, no automatizable aquí)**: login/registro, guardar KK, rachas, chat, fotos (Storage), push; mapa de calor; export/import CSV·JSON y compartir; banner offline; widget de inicio. Iconos de launcher NO regenerados (falta estructura iOS; fuera de alcance).
 - **Estado al añadirse**: Flutter 3.41.4 estable (marzo 2026, hay versión más nueva disponible); ~90 paquetes con versiones mayores incompatibles con las restricciones actuales de `pubspec.yaml`.
 - **Saltos mayores destacados** (requieren revisar breaking changes):
   - Toda la familia Firebase: `cloud_firestore` 5→6, `firebase_auth` 5→6, `firebase_core` 3→4, `firebase_messaging` 15→16, `firebase_storage` 12→13 (se actualizan en bloque).
