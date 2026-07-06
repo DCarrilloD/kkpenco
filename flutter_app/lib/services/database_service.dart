@@ -10,6 +10,7 @@ import 'auth_service.dart'; // Para leer useMockData
 import '../models/event.dart';
 import '../models/chat_message.dart';
 import '../models/achievement.dart';
+import '../models/achievement_stats.dart';
 
 // Estructura para paginación
 class PagedEventsResult {
@@ -334,24 +335,51 @@ class DatabaseService {
       previousLastPoop: previousLastPoop,
       newEventDate: event.timestamp,
     );
+    final newMaxStreak = newStreak > maxStreak ? newStreak : maxStreak;
 
     int kcoinsReward = 15;
     if (event.latitude != null) kcoinsReward += 10;
     if (event.difficulty >= 4) kcoinsReward += 5;
     if (event.notes != null && event.notes!.length > 20) kcoinsReward += 5;
 
+    // Logros por contadores agregados (mejora 2.1): en vez de descargar la
+    // colección `events` entera en cada guardado, se parte de los contadores
+    // ya leídos en el doc del usuario, se les suma este evento y se evalúan los
+    // logros contra ellos. Cero lecturas extra; una sola escritura en el batch.
+    final newStats = AchievementStats.fromMap(
+      userData?['achStats'] as Map<String, dynamic>?,
+    ).fold(event);
+    final existingAchievements =
+        List<String>.from(userData?['achievements'] ?? const []);
+    final unlockedAchievements = evaluateUnlockedAchievements(
+      existing: existingAchievements,
+      stats: newStats,
+      currentStreak: newStreak,
+      maxStreak: newMaxStreak,
+      duelsCompleted: userData?['duelsCompleted'] as int? ?? 0,
+      kcoins: (userData?['kcoins'] as int? ?? 0) + kcoinsReward,
+    );
+
     final batch = _db.batch();
 
     // Registrar el evento con ID autogenerado
     batch.set(eventRef, event);
 
-    // Contador de por vida, rachas y Kakadólares en la misma escritura atómica
+    // Contador de por vida, rachas, Kakadólares, contadores de logros y los
+    // logros recién desbloqueados, todo en la misma escritura atómica.
+    // Nota: `achStats` se sobrescribe como mapa completo (no con increment),
+    // así que dos addEvent verdaderamente simultáneos del mismo usuario podrían
+    // perder un fold; poopCount/kcoins siguen con increment (seguros). Riesgo
+    // muy bajo para un grupo de amigos.
     batch.update(userRef, {
       'poopCount': FieldValue.increment(1),
       'lastPoop': Timestamp.fromDate(event.timestamp),
       'currentStreak': newStreak,
-      'maxStreak': newStreak > maxStreak ? newStreak : maxStreak,
+      'maxStreak': newMaxStreak,
       'kcoins': FieldValue.increment(kcoinsReward),
+      'achStats': newStats.toMap(),
+      if (unlockedAchievements.isNotEmpty)
+        'achievements': FieldValue.arrayUnion(unlockedAchievements),
     });
 
     // Incrementar estadísticas mensuales de forma atómica
@@ -361,19 +389,23 @@ class DatabaseService {
       'month': monthStr,
     }, SetOptions(merge: true));
 
-    // Lógica secundaria: logro de kcoins (umbral evaluado con el valor previo
-    // ya leído, sin relectura), duelos y logros. La racha ya va en el batch.
-    Future<void> runSecondaryLogic() async {
-      final previousKcoins = userData?['kcoins'] as int? ?? 0;
-      if (previousKcoins + kcoinsReward >= 500) {
-        await unlockAchievement(event.userId, 'caca_capitalist', null);
+    // Notificar los logros desbloqueados para el popup de la UI (optimista: la
+    // escritura ya está encolada y visible localmente).
+    void emitUnlocked() {
+      for (final id in unlockedAchievements) {
+        _achievementUnlockedStreamController.add(id);
       }
+    }
+
+    // Lógica secundaria: solo el recuento de duelos activos (consulta la
+    // colección `duels`). Los logros ya van resueltos en el batch.
+    Future<void> runSecondaryLogic() async {
       await _updateActiveDuelsCount(event.userId);
-      await _checkAndUnlockAchievements(event);
     }
 
     if (waitForServerAck) {
       await batch.commit();
+      emitUnlocked();
       await runSecondaryLogic();
     } else {
       // Escritura optimista: la persistencia deja la escritura encolada y
@@ -381,6 +413,7 @@ class DatabaseService {
       unawaited(batch.commit().catchError((e) {
         debugPrint('Error al confirmar el guardado del evento: $e');
       }));
+      emitUnlocked();
       unawaited(runSecondaryLogic().catchError((e) {
         debugPrint('Error en la lógica secundaria de addEvent: $e');
       }));

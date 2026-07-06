@@ -48,10 +48,12 @@
 
 ## Fase 2 — Eficiencia de batería, datos y coste Firestore
 
-### [ ] 2.1 Cada registro descarga la colección `events` ENTERA 🔴💰
+### [x] 2.1 Cada registro descarga la colección `events` ENTERA 🔴💰 — HECHO (2026-07-06, contadores agregados sin backfill)
 - **Dónde**: `database_service.dart:1599` (`_checkAndUnlockAchievements` → `getAllEvents()` sin límite) y `:1244` (`unlockAchievement` relee el doc de usuario en cada una de sus ~25 posibles llamadas).
 - **Problema**: todos los eventos de todos los usuarios, en cada guardado (también desde el widget en background). Mayor consumidor de red/batería/lecturas facturables; crece sin tope.
-- **Fix**: contadores agregados en el doc del usuario (cacas nocturnas, por localización, coordenadas distintas…) actualizados con `FieldValue.increment` en el mismo batch del evento; evaluar logros contra esos contadores. Pasar la lista de logros ya leída para evitar relecturas.
+- **Fix aplicado**: nuevo motor puro `lib/models/achievement_stats.dart` (`AchievementStats.fold` + `evaluateUnlockedAchievements`). La rama Firebase de `addEvent` parte de los contadores ya leídos del doc del usuario (`achStats`), les suma el evento y evalúa los ~45 logros contra ellos; escribe `achStats` + `arrayUnion(achievements)` en el mismo `batch` (cero lecturas extra, una escritura). La rama mock se deja intacta (recalcula en memoria, sin coste). Sin cambios en reglas (el dueño ya puede escribir campos nuevos salvo `role`). Cubierto por `test/achievement_stats_test.dart`.
+- **Decisión**: "contar desde ahora" (sin backfill del histórico). Los logros ya desbloqueados no se pierden; el progreso hacia los aún no logrados arranca a cero.
+- **Trade-offs asumidos**: `deleteEvent` no decrementa `achStats`; `achStats` se escribe como mapa completo (no `increment`), así que dos guardados simultáneos del mismo usuario podrían perder un fold (riesgo bajo).
 - **Esfuerzo**: grande, pero es la mejora con más retorno.
 
 ### [x] 2.2 Guardado offline se cuelga con spinner infinito 🟠 — HECHO (2026-07-05)
