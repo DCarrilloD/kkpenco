@@ -149,10 +149,11 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
     // todo en la oleada que sigue a un jefe, que antes te mataba al aparecer.
     waveGraceTimer = 1.4;
 
-    // Oleada 1 más suave: 8 enemigos en vez de 10 para no abrumar al empezar
-    int cols = wave == 1 ? 4 : 5;
-    int rows = 2;
-    double speedX = 50.0 + wave * 6.0;
+    // Reducir cantidad de enemigos para un gameplay más calmado
+    int cols = wave == 1 ? 3 : (wave == 2 ? 4 : 3);
+    int rows = wave < 3 ? 1 : 2;
+    // Escalado de velocidad más suave para evitar locura en oleadas altas
+    double speedX = 40.0 + wave * 3.5;
     bool isAlienWave = nextBossIndex > 1;
     double startX = size.x * (1 - (cols - 1) * 0.17) / 2;
 
@@ -724,10 +725,9 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     if (type == 'boss') {
       _bossAttacks(dt);
     } else if (type != 'ufo') {
-      // Cadencia por enemigo: base más baja, crecimiento más suave y con tope
-      // para que las oleadas altas no se vuelvan un muro de balas. Respeta la
-      // gracia del inicio de oleada.
-      double shotsPerSecond = (0.13 + game.wave * 0.03).clamp(0.0, 0.5);
+      // Cadencia por enemigo aún más baja y con un tope más bajo
+      // para evitar que se convierta en un infierno de balas.
+      double shotsPerSecond = (0.03 + game.wave * 0.01).clamp(0.0, 0.15);
       if (game.waveGraceTimer <= 0 && Random().nextDouble() < shotsPerSecond * dt) {
          game.spawnLaser(pos: position.clone()..y += size.y / 2, vy: 200.0, fromPlayer: false);
       }
