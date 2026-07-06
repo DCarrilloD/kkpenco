@@ -379,7 +379,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       // Convertir a cadena CSV
-      String csvData = const ListToCsvConverter().convert(rows);
+      String csvData = const CsvEncoder().convert(rows);
 
       // Guardar localmente de forma temporal
       final directory = await getTemporaryDirectory();
