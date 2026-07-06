@@ -17,6 +17,7 @@ import 'stats_panel_screen.dart';
 import 'biometric_simulation_dialog.dart';
 import 'achievements_screen.dart';
 import 'admin_panel_screen.dart';
+import 'notification_settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -710,6 +711,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _ProfileButtons(
               isAdmin: isAdmin,
               isLoading: _isLoading,
+              onViewNotifications: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const NotificationSettingsScreen()),
+                );
+              },
               onViewAchievements: () {
                 Navigator.push(
                   context,
@@ -952,6 +960,7 @@ class _SettingsTile extends StatelessWidget {
 class _ProfileButtons extends StatelessWidget {
   final bool isAdmin;
   final bool isLoading;
+  final VoidCallback onViewNotifications;
   final VoidCallback onViewAchievements;
   final VoidCallback onViewAdminPanel;
   final VoidCallback onViewStats;
@@ -960,6 +969,7 @@ class _ProfileButtons extends StatelessWidget {
   const _ProfileButtons({
     required this.isAdmin,
     required this.isLoading,
+    required this.onViewNotifications,
     required this.onViewAchievements,
     required this.onViewAdminPanel,
     required this.onViewStats,
@@ -971,6 +981,18 @@ class _ProfileButtons extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ElevatedButton.icon(
+          onPressed: onViewNotifications,
+          icon: const Icon(Icons.notifications_active_rounded, color: Colors.amberAccent),
+          label: const Text('Notificaciones', style: TextStyle(fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.brown[700],
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        const SizedBox(height: 20),
         ElevatedButton.icon(
           onPressed: onViewAchievements,
           icon: const Icon(Icons.emoji_events_rounded, color: Colors.amberAccent),

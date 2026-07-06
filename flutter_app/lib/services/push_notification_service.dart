@@ -1,13 +1,25 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/material.dart';
 
+import '../firebase_options.dart';
+import 'auth_service.dart'; // Para useMockData
+import 'database_service.dart';
+
+/// Handler de mensajes en segundo plano. Debe ser una función de nivel superior
+/// con @pragma('vm:entry-point') y registrarse en main() con
+/// FirebaseMessaging.onBackgroundMessage antes de runApp. Los mensajes con
+/// bloque `notification` los pinta el sistema operativo automáticamente; aquí
+/// solo garantizamos que Firebase esté inicializado en el isolate de background.
 @pragma('vm:entry-point')
-Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Asegurarse de que Firebase esté inicializado en el isolate en segundo plano
-  // Firebase.initializeApp() debería llamarse antes, pero asumimos que el SDK 
-  // maneja la recepción inicial o se configura en main.dart.
-  debugPrint("Handling a background message: ${message.messageId}");
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  } catch (_) {
+    // Ya inicializado en este isolate.
+  }
+  debugPrint('Mensaje push en segundo plano: ${message.messageId}');
 }
 
 class PushNotificationService {
@@ -21,7 +33,7 @@ class PushNotificationService {
   bool _initialized = false;
 
   Future<void> init() async {
-    if (_initialized) return;
+    if (_initialized || useMockData) return;
 
     // Solicitar permisos en iOS y Android 13+
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
@@ -31,12 +43,12 @@ class PushNotificationService {
     );
 
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      debugPrint('User granted permission');
+      debugPrint('Permiso de notificaciones concedido');
     } else {
-      debugPrint('User declined or has not accepted permission');
+      debugPrint('Permiso de notificaciones denegado o pendiente');
     }
 
-    // Configurar notificaciones locales
+    // Configurar notificaciones locales (para mostrarlas en primer plano)
     const AndroidInitializationSettings initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
     const DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings();
     const InitializationSettings initializationSettings = InitializationSettings(
@@ -47,21 +59,33 @@ class PushNotificationService {
       settings: initializationSettings,
     );
 
-    // Configurar recepción en segundo plano
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-    // Escuchar mensajes en primer plano
+    // Escuchar mensajes en primer plano (el SO no los muestra solo)
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('Got a message whilst in the foreground!');
-      debugPrint('Message data: ${message.data}');
-
-      if (message.notification != null) {
-        debugPrint('Message also contained a notification: ${message.notification}');
-        _showLocalNotification(message.notification!.title, message.notification!.body);
+      final notification = message.notification;
+      if (notification != null) {
+        _showLocalNotification(notification.title, notification.body);
       }
     });
 
     _initialized = true;
+  }
+
+  /// Guarda el token FCM del dispositivo en el doc del usuario y se suscribe a
+  /// sus renovaciones. Necesario para que las Cloud Functions sepan a dónde
+  /// enviar los avisos. No hace nada en modo simulación.
+  Future<void> registerDeviceForUser(String uid) async {
+    if (useMockData) return;
+    try {
+      final token = await _firebaseMessaging.getToken();
+      if (token != null) {
+        await DatabaseService().saveFcmToken(uid, token);
+      }
+      _firebaseMessaging.onTokenRefresh.listen((newToken) {
+        DatabaseService().saveFcmToken(uid, newToken);
+      });
+    } catch (e) {
+      debugPrint('Error al registrar el token FCM: $e');
+    }
   }
 
   Future<void> _showLocalNotification(String? title, String? body) async {
@@ -74,7 +98,7 @@ class PushNotificationService {
       color: Color(0xFF5D4037),
     );
     const NotificationDetails platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
-    
+
     await _localNotificationsPlugin.show(
       id: DateTime.now().millisecondsSinceEpoch ~/ 1000 % 2147483647,
       title: title ?? 'KKpenco',

@@ -1055,6 +1055,58 @@ class DatabaseService {
     return doc.data() ?? {};
   }
 
+  // --- NOTIFICACIONES PUSH (token FCM y preferencias) ---
+
+  // Preferencias por defecto: eventos activados (aviso base), duelos activados,
+  // chat desactivado (opt-in desde el menú de Perfil). Las Cloud Functions usan
+  // exactamente estos mismos defaults al decidir a quién enviar.
+  static const Map<String, bool> defaultNotifPrefs = {
+    'events': true,
+    'duels': true,
+    'chat': false,
+  };
+
+  // Guarda el token FCM del dispositivo en el doc del usuario.
+  Future<void> saveFcmToken(String userId, String token) async {
+    if (useMockData) return;
+    await _db.collection('users').doc(userId).set({
+      'fcmToken': token,
+    }, SetOptions(merge: true));
+  }
+
+  // Lee las preferencias de notificación, rellenando los que falten con los
+  // defaults.
+  Future<Map<String, bool>> getNotificationPrefs(String userId) async {
+    if (useMockData) {
+      final prefs = await SharedPreferences.getInstance();
+      return {
+        for (final e in defaultNotifPrefs.entries)
+          e.key: prefs.getBool('notif_${e.key}_$userId') ?? e.value,
+      };
+    }
+    final doc = await _db.collection('users').doc(userId).get();
+    final raw = (doc.data()?['notifPrefs'] as Map<String, dynamic>?) ?? {};
+    return {
+      for (final e in defaultNotifPrefs.entries)
+        e.key: raw[e.key] as bool? ?? e.value,
+    };
+  }
+
+  // Guarda las preferencias de notificación del usuario.
+  Future<void> updateNotificationPrefs(
+      String userId, Map<String, bool> prefs) async {
+    if (useMockData) {
+      final sp = await SharedPreferences.getInstance();
+      for (final e in prefs.entries) {
+        await sp.setBool('notif_${e.key}_$userId', e.value);
+      }
+      return;
+    }
+    await _db.collection('users').doc(userId).set({
+      'notifPrefs': prefs,
+    }, SetOptions(merge: true));
+  }
+
   Future<void> updateUserTitle(String userId, String? title) async {
     await _db.collection('users').doc(userId).set({
       'equippedTitle': title,

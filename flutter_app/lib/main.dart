@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 
@@ -11,6 +12,7 @@ import 'models/app_user.dart';
 import 'models/event.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
+import 'services/push_notification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/tracker_screen.dart';
@@ -143,6 +145,12 @@ void main() async {
     debugPrint("Error al inicializar Firebase. Activando Modo Simulación: $e");
   }
 
+  // Registrar el handler de mensajes push en segundo plano. Debe hacerse aquí,
+  // antes de runApp, y solo con Firebase disponible (Android, no simulación).
+  if (defaultTargetPlatform == TargetPlatform.android && !useMockData) {
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  }
+
   runApp(const KKpencoApp());
 }
 
@@ -222,6 +230,18 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
       duration: const Duration(milliseconds: 320),
       value: 1.0,
     );
+    // Con sesión activa: pedir permiso de notificaciones y registrar el token
+    // FCM del dispositivo para que las Cloud Functions puedan enviar avisos.
+    _setupPushNotifications();
+  }
+
+  Future<void> _setupPushNotifications() async {
+    if (useMockData) return;
+    final uid = AuthService().currentUser?.uid;
+    if (uid == null) return;
+    final push = PushNotificationService();
+    await push.init();
+    await push.registerDeviceForUser(uid);
   }
 
   @override
