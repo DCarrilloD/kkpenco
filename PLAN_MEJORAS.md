@@ -94,18 +94,18 @@
 - **Problema**: ip-api.com solo sirve HTTP en el tier gratuito (HTTPS es de pago), y HTTP plano está bloqueado por la política cleartext de Android → el fallback falla siempre.
 - **Fix**: cambiar a un servicio gratuito con HTTPS (p. ej. `ipwho.is` o `ipapi.co/json`).
 
-### [ ] 3.2 Sin detección de conectividad 🟡
-- **Fix**: añadir `connectivity_plus`; banner "Sin conexión — tus registros se sincronizarán" (aprovecha la persistencia de Firestore una vez hecho 2.2). Deshabilitar o encolar acciones que requieren red inmediata (fotos del chat).
+### [x] 3.2 Sin detección de conectividad 🟡 — HECHO (2026-07-06)
+- **Fix aplicado**: `connectivity_plus: ^6.1.0` + nuevo `lib/services/connectivity_service.dart` (`onStatusChange` emite estado inicial + cambios; no-op en mock). Banner `_OfflineBanner` en `MainNavigationScreen` ("Sin conexión — tus registros se sincronizarán al volver"). `_sendImage` del chat se bloquea con aviso si no hay red (la foto sube a Storage y necesita conexión; los mensajes de texto los encola la persistencia).
 
-### [ ] 3.3 Indicador "está escribiendo…" se queda pegado 🟡
+### [x] 3.3 Indicador "está escribiendo…" se queda pegado 🟡 — HECHO (2026-07-06)
 - **Dónde**: `database_service.dart:843` (filtro de 8 s solo se evalúa al llegar un snapshot) y `chat_screen.dart:51-57` (`dispose` no limpia el estado typing).
 - **Problema**: si alguien mata la app con `typing=true`, su doc queda huérfano y los demás ven "escribiendo…" hasta que otro evento dispare un snapshot.
-- **Fix**: limpiar typing en `dispose`; en cliente, reevaluar el filtro con un timer local corto mientras haya usuarios "escribiendo".
+- **Fix aplicado**: `getTypingUsers()` (rama Firebase) combina los snapshots con un tick periódico (3 s) vía `StreamController`, reevaluando el filtro de frescura aunque no llegue snapshot; `chat_screen.dispose` limpia el typing propio y el stream se cachea en un campo para no re-suscribir en cada rebuild.
 
-### [ ] 3.4 Robustez del callback del widget de escritorio 🟡
+### [x] 3.4 Robustez del callback del widget de escritorio 🟡 — HECHO (2026-07-06)
 - **Dónde**: `main.dart:39` (`interactiveCallback`).
 - **Problema**: `await authStateChanges().first` sin timeout (puede colgar el servicio en background); ejecuta el `addEvent` completo, incluido el escaneo de logros de 2.1.
-- **Fix**: timeout + ruta ligera de guardado (solo batch + kcoins).
+- **Fix aplicado**: `.timeout(10 s, onTimeout: () => null)` en `authStateChanges().first`. El escaneo pesado de logros ya se eliminó de `addEvent` en 2.1 (contadores agregados en el batch), así que la "ruta ligera" ya está cubierta.
 
 ---
 

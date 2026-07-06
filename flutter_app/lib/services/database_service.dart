@@ -930,20 +930,45 @@ class DatabaseService {
       return _typingStreamController.stream;
     }
 
-    return _db.collection('typing').snapshots().map((snap) {
+    // Combina los snapshots de Firestore con un tick periódico para reevaluar el
+    // filtro de frescura (8 s) aunque no llegue un snapshot nuevo: si alguien
+    // cierra la app con typing=true, su doc queda huérfano y de otro modo los
+    // demás lo verían "escribiendo…" hasta que otro evento disparase un snapshot.
+    QuerySnapshot<Map<String, dynamic>>? lastSnap;
+
+    Map<String, String> build() {
       final map = <String, String>{};
+      final snap = lastSnap;
+      if (snap == null) return map;
       for (var doc in snap.docs) {
-        final data = doc.data();
-        final timestamp = data['timestamp'] as Timestamp?;
-        if (timestamp != null) {
-          final diff = DateTime.now().difference(timestamp.toDate());
-          if (diff.inSeconds < 8) {
-            map[doc.id] = data['username'] ?? 'Usuario';
-          }
+        final timestamp = doc.data()['timestamp'] as Timestamp?;
+        if (timestamp != null &&
+            DateTime.now().difference(timestamp.toDate()).inSeconds < 8) {
+          map[doc.id] = doc.data()['username'] ?? 'Usuario';
         }
       }
       return map;
-    });
+    }
+
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? sub;
+    Timer? ticker;
+    late final StreamController<Map<String, String>> controller;
+    controller = StreamController<Map<String, String>>(
+      onListen: () {
+        sub = _db.collection('typing').snapshots().listen((snap) {
+          lastSnap = snap;
+          controller.add(build());
+        }, onError: controller.addError);
+        ticker = Timer.periodic(const Duration(seconds: 3), (_) {
+          if (lastSnap != null) controller.add(build());
+        });
+      },
+      onCancel: () async {
+        await sub?.cancel();
+        ticker?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   // Recalcular y actualizar rachas en base de datos (modo mock y borrados;

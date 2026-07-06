@@ -13,6 +13,7 @@ import 'models/event.dart';
 import 'services/auth_service.dart';
 import 'services/database_service.dart';
 import 'services/push_notification_service.dart';
+import 'services/connectivity_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/tracker_screen.dart';
@@ -38,7 +39,13 @@ Future<void> interactiveCallback(Uri? uri) async {
   }
 
   User? user = FirebaseAuth.instance.currentUser;
-  user ??= await FirebaseAuth.instance.authStateChanges().first;
+  // Timeout: sin él, un authStateChanges que nunca emite colgaría el isolate de
+  // background del widget indefinidamente. La lógica pesada de logros ya se
+  // eliminó de addEvent en 2.1 (contadores agregados en el batch).
+  user ??= await FirebaseAuth.instance
+      .authStateChanges()
+      .first
+      .timeout(const Duration(seconds: 10), onTimeout: () => null);
   if (user == null) return;
 
   Consistency consistency;
@@ -306,33 +313,40 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AnimatedBuilder(
-        animation: _tabTransitionController,
-        builder: (context, child) {
-          // Escala premium sutil tridimensional (Zoom 3D refinado del 3%) sobre la
-          // pestaña entrante. El IndexedStack mantiene las pantallas montadas, así
-          // que cambiar de pestaña no re-suscribe streams ni relee Firestore.
-          final t = Curves.easeOutCubic.transform(_tabTransitionController.value);
-          final direction = _currentIndex >= _previousIndex ? 1.0 : -1.0;
-          final double beginScale = direction > 0 ? 1.03 : 0.97;
-          final double scale = beginScale + (1.0 - beginScale) * t;
-          final double opacity = (0.35 + 0.65 * t).clamp(0.0, 1.0);
+      body: Column(
+        children: [
+          const _OfflineBanner(),
+          Expanded(
+            child: AnimatedBuilder(
+              animation: _tabTransitionController,
+              builder: (context, child) {
+                // Escala premium sutil tridimensional (Zoom 3D refinado del 3%) sobre la
+                // pestaña entrante. El IndexedStack mantiene las pantallas montadas, así
+                // que cambiar de pestaña no re-suscribe streams ni relee Firestore.
+                final t = Curves.easeOutCubic.transform(_tabTransitionController.value);
+                final direction = _currentIndex >= _previousIndex ? 1.0 : -1.0;
+                final double beginScale = direction > 0 ? 1.03 : 0.97;
+                final double scale = beginScale + (1.0 - beginScale) * t;
+                final double opacity = (0.35 + 0.65 * t).clamp(0.0, 1.0);
 
-          return Opacity(
-            opacity: opacity,
-            child: Transform.scale(
-              scale: scale,
-              child: child,
+                return Opacity(
+                  opacity: opacity,
+                  child: Transform.scale(
+                    scale: scale,
+                    child: child,
+                  ),
+                );
+              },
+              child: IndexedStack(
+                index: _currentIndex,
+                children: [
+                  for (int i = 0; i < _screens.length; i++)
+                    _builtTabs.contains(i) ? _screens[i] : const SizedBox.shrink(),
+                ],
+              ),
             ),
-          );
-        },
-        child: IndexedStack(
-          index: _currentIndex,
-          children: [
-            for (int i = 0; i < _screens.length; i++)
-              _builtTabs.contains(i) ? _screens[i] : const SizedBox.shrink(),
-          ],
-        ),
+          ),
+        ],
       ),
       bottomNavigationBar: Container(
         padding: EdgeInsets.only(
@@ -429,6 +443,60 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
           ],
         ),
       ),
+    );
+  }
+}
+
+// Banner que aparece cuando no hay conexión. La persistencia offline de
+// Firestore encola las escrituras, así que los registros se sincronizan solos
+// al volver la red; esto es solo un aviso visual.
+class _OfflineBanner extends StatefulWidget {
+  const _OfflineBanner();
+
+  @override
+  State<_OfflineBanner> createState() => _OfflineBannerState();
+}
+
+class _OfflineBannerState extends State<_OfflineBanner> {
+  late final Stream<bool> _statusStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusStream = ConnectivityService().onStatusChange;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: _statusStream,
+      builder: (context, snapshot) {
+        // Sin dato aún (o en mock) asumimos conexión: no mostrar nada.
+        final online = snapshot.data ?? true;
+        if (online) return const SizedBox.shrink();
+        return const Material(
+          color: Color(0xFF7A3B00),
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.cloud_off_rounded, size: 18, color: Colors.white),
+                  SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Sin conexión — tus registros se sincronizarán al volver',
+                      style: TextStyle(color: Colors.white, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

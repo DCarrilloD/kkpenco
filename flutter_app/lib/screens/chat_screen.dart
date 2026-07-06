@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/chat_message.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/connectivity_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -28,10 +29,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   bool _isAdmin = false;
 
+  late final Stream<Map<String, String>> _typingStream;
+
   @override
   void initState() {
     super.initState();
     _messageController.addListener(_onTextChanged);
+    _typingStream = _dbService.getTypingUsers();
     _checkAdminStatus();
   }
 
@@ -50,6 +54,14 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _messageController.removeListener(_onTextChanged);
+    // Limpiar el estado de escritura al salir, para no dejar el doc huérfano
+    // y que los demás vean "escribiendo…" pegado.
+    if (_isTyping) {
+      final user = _authService.currentUser;
+      if (user != null) {
+        _dbService.setTypingStatus(user.uid, user.displayName, false);
+      }
+    }
     _messageController.dispose();
     _scrollController.dispose();
     _typingTimer?.cancel();
@@ -116,6 +128,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _sendImage() async {
+    // Enviar una foto sube el archivo a Storage: sin red no funciona (a
+    // diferencia de un mensaje de texto, que la persistencia offline encola).
+    if (!await ConnectivityService().isOnline()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sin conexión: no se pueden enviar fotos ahora.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (image == null) return;
@@ -477,7 +502,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
           // Indicador de Escritura
           StreamBuilder<Map<String, String>>(
-            stream: _dbService.getTypingUsers(),
+            stream: _typingStream,
             builder: (context, snapshot) {
               final typingMap = snapshot.data ?? {};
               typingMap.remove(currentUser.uid); // Excluir al propio usuario
