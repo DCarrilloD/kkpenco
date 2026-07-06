@@ -2,7 +2,7 @@
   "name": "kkpenco-functions",
   "description": "Cloud Functions de KKpenco: avisos push automáticos (eventos, duelos, chat)",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {
