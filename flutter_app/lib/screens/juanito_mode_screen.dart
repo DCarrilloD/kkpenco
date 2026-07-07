@@ -3,6 +3,8 @@ import 'juanito_mode/caca_catch_game.dart';
 import 'juanito_mode/flappy_poop_game.dart';
 import 'juanito_mode/toilet_jump_game.dart';
 import 'juanito_mode/poop_invaders_game.dart';
+import 'juanito_mode/shared_game_components.dart' show GameAudio;
+import 'juanito_mode/flame_games/sprite_rasterizer.dart' show SpriteCache, EmojiSprites;
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -46,7 +48,6 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
 
   // Zen Music Control
   bool _isMusicEnabled = true;
-  final bool _alternateGameTrack = false;
   String? _currentlyPlayingSource;
   late AnimationController _soundAnimController;
 
@@ -126,6 +127,9 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   }
 
   void _precacheFlameAudios() {
+    // Pools de SFX reutilizables (un AudioPlayer nativo por efecto en vez de
+    // uno nuevo por disparo/moneda/salto). Se crean una vez por sesión de app.
+    GameAudio.init();
     FlameAudio.audioCache.loadAll([
       'jump.wav',
       'coin.wav',
@@ -158,6 +162,10 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     _timeNotifier.dispose();
     _soundAnimController.dispose();
     _audioPlayer.dispose();
+    // Las texturas de los minijuegos se comparten entre partidas: la limpieza
+    // es única, aquí, al salir del Modo Juanito.
+    EmojiSprites.clear();
+    SpriteCache.clear();
     super.dispose();
   }
 
@@ -191,7 +199,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
     }
   }
 
-  // --- M├ëTODOS DE LA TIENDA Y RECOMPENSAS ---
+  // --- MÉTODOS DE LA TIENDA Y RECOMPENSAS ---
   Future<void> _loadZenProfile() async {
     final user = _authService.currentUser;
     if (user != null) {
@@ -270,15 +278,12 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
           _activeGame == ActiveGame.toiletJump ||
           _activeGame == ActiveGame.poopInvaders;
 
-      final String targetSource;
-
-      if (isMinigame) {
-        targetSource = _alternateGameTrack
-            ? 'audio/First_Light_on_the_Ridge.mp3'
-            : 'audio/Village_of_Seven_Springs.mp3';
-      } else {
-        targetSource = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3';
-      }
+      // Pista local también en el menú: streamear un MP3 externo en bucle
+      // gastaba datos y batería (radio encendida) y sin conexión dejaba el
+      // menú en silencio. First_Light ya venía empaquetada y estaba sin uso.
+      final String targetSource = isMinigame
+          ? 'audio/Village_of_Seven_Springs.mp3'
+          : 'audio/First_Light_on_the_Ridge.mp3';
 
       if (_currentlyPlayingSource == targetSource) {
         await _audioPlayer.setVolume(0.12);
@@ -288,12 +293,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
       await _audioPlayer.stop();
       await _audioPlayer.setReleaseMode(ReleaseMode.loop);
       await _audioPlayer.setVolume(0.12);
-
-      if (isMinigame) {
-        await _audioPlayer.play(AssetSource(targetSource));
-      } else {
-        await _audioPlayer.play(UrlSource(targetSource));
-      }
+      await _audioPlayer.play(AssetSource(targetSource));
       _currentlyPlayingSource = targetSource;
     } catch (e) {
       // Música de fondo: si falla la reproducción no es crítico ni accionable
@@ -513,7 +513,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
 
 
   // ==========================================
-  // --- MINIJUEGO 2: FLAPPY POOP ­ƒÆ®­ƒòè´©Å ---
+  // --- MINIJUEGO 2: FLAPPY POOP 💩🕊️ ---
   // ==========================================
 
 
@@ -533,7 +533,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
 
 
   // ==========================================
-  // --- MINIJUEGO 3: TOILET JUMP ­ƒÆ®jump ---
+  // --- MINIJUEGO 3: TOILET JUMP 🦘 ---
   // ==========================================
 
 
@@ -1137,11 +1137,11 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
           child: ListView(
             padding: EdgeInsets.zero,
             children: [
-              // Secci├│n de Aspectos (Skins)
+              // Sección de Aspectos (Skins)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8.0, top: 4.0),
                 child: Text(
-                  'ASPECTOS DE CACA ­ƒÄ¡',
+                  'ASPECTOS DE CACA 🎭',
                   style: TextStyle(color: Colors.pinkAccent, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.0),
                 ),
               ),
@@ -1248,11 +1248,11 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
               ),
               const SizedBox(height: 16),
 
-              // Secci├│n de Potenciadores (Powerups)
+              // Sección de Potenciadores (Powerups)
               const Padding(
                 padding: EdgeInsets.only(bottom: 8.0),
                 child: Text(
-                  'POTENCIADORES CONSUMIBLES (1 USO) ÔÜí',
+                  'POTENCIADORES CONSUMIBLES (1 USO) ⚡',
                   style: TextStyle(color: Colors.cyanAccent, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.0),
                 ),
               ),
@@ -1282,10 +1282,10 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
                       },
                       items: const [
                         DropdownMenuItem(value: 'todos', child: Text('Mostrar todos los potenciadores')),
-                        DropdownMenuItem(value: 'caca_catch', child: Text('Filtrar por: Caca Catch ­ƒÜ¢')),
-                        DropdownMenuItem(value: 'flappy_poop', child: Text('Filtrar por: Flappy Poop ­ƒÆ®­ƒòè´©Å')),
-                        DropdownMenuItem(value: 'toilet_jump', child: Text('Filtrar por: Toilet Jump ­ƒÆ®jump')),
-                        DropdownMenuItem(value: 'poop_invaders', child: Text('Filtrar por: Poop Invaders ­ƒæ¥')),
+                        DropdownMenuItem(value: 'caca_catch', child: Text('Filtrar por: Caca Catch 🚽')),
+                        DropdownMenuItem(value: 'flappy_poop', child: Text('Filtrar por: Flappy Poop 💩🕊️')),
+                        DropdownMenuItem(value: 'toilet_jump', child: Text('Filtrar por: Toilet Jump 🦘')),
+                        DropdownMenuItem(value: 'poop_invaders', child: Text('Filtrar por: Poop Invaders 👾')),
                       ],
                     ),
                   ),
@@ -1436,7 +1436,7 @@ class _JuanitoModeScreenState extends State<JuanitoModeScreen>
   }
 
   // ==========================================
-  // --- MINIJUEGO 4: POOP INVADERS ­ƒæ¥ ---
+  // --- MINIJUEGO 4: POOP INVADERS 👾 ---
   // ==========================================
 
 
