@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Descripciones del selector de widgets (Android 12+) -->
+    <string name="widget_express_description">Registro rápido: elige la consistencia con un toque</string>
+    <string name="widget_mojona_description">Un botón, una caca. Doble toque para confirmar</string>
+    <string name="widget_vigia_description">Tu racha y contadores, con botón de registro rápido</string>
+    <string name="widget_podio_description">El podio del grupo y tu posición</string>
+    <string name="widget_trono_description">Abre la app con el cronómetro ya en marcha</string>
+</resources>

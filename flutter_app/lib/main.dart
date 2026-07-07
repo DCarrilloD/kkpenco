@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -14,6 +15,7 @@ import 'services/auth_service.dart';
 import 'services/database_service.dart';
 import 'services/push_notification_service.dart';
 import 'services/connectivity_service.dart';
+import 'services/widget_data_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/tracker_screen.dart';
@@ -24,8 +26,6 @@ import 'screens/profile_screen.dart';
 @pragma('vm:entry-point')
 Future<void> interactiveCallback(Uri? uri) async {
   if (uri == null) return;
-  final consistencyStr = uri.queryParameters['consistency'];
-  if (consistencyStr == null) return;
 
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -38,16 +38,46 @@ Future<void> interactiveCallback(Uri? uri) async {
     // Si ya está inicializado
   }
 
-  User? user = FirebaseAuth.instance.currentUser;
-  // Timeout: sin él, un authStateChanges que nunca emite colgaría el isolate de
-  // background del widget indefinidamente. La lógica pesada de logros ya se
-  // eliminó de addEvent en 2.1 (contadores agregados en el batch).
-  user ??= await FirebaseAuth.instance
-      .authStateChanges()
-      .first
-      .timeout(const Duration(seconds: 10), onTimeout: () => null);
-  if (user == null) return;
+  // Rutas de los widgets: kkpenco://express?consistency=X (botonera) y
+  // kkpenco://mojona (botón 1x1 con armado en dos toques)
+  if (uri.host == 'mojona') {
+    await _handleMojonaTap();
+  } else if (uri.host == 'express') {
+    final consistencyStr = uri.queryParameters['consistency'];
+    if (consistencyStr == null) return;
+    await _quickAddFromWidget(consistencyStr);
+  }
+}
 
+/// «La Mojona»: el primer toque arma el botón (borde ámbar, 5 s) y el segundo
+/// dentro de la ventana registra una KK Normal. Evita registros por roce.
+Future<void> _handleMojonaTap() async {
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final armedRaw = await HomeWidget.getWidgetData<String>('mojonaArmedMillis');
+
+  if (mojonaTapConfirms(armedMillisRaw: armedRaw, nowMillis: now)) {
+    await HomeWidget.saveWidgetData<String>('mojonaArmedMillis', '');
+    await HomeWidget.updateWidget(androidName: 'MojonaWidgetProvider');
+    await _quickAddFromWidget('normal');
+    return;
+  }
+
+  // Armar y re-renderizar; si nadie confirma, desarmar al expirar la ventana
+  // (este isolate sigue vivo unos segundos sin problema).
+  final armedValue = '$now';
+  await HomeWidget.saveWidgetData<String>('mojonaArmedMillis', armedValue);
+  await HomeWidget.updateWidget(androidName: 'MojonaWidgetProvider');
+  await Future.delayed(const Duration(milliseconds: 5500));
+  final current = await HomeWidget.getWidgetData<String>('mojonaArmedMillis');
+  if (current == armedValue) {
+    await HomeWidget.saveWidgetData<String>('mojonaArmedMillis', '');
+    await HomeWidget.updateWidget(androidName: 'MojonaWidgetProvider');
+  }
+}
+
+/// Registro rápido desde cualquier widget, con guardia anti-doble-toque y
+/// feedback real de resultado (éxito / sin conexión / sin sesión).
+Future<void> _quickAddFromWidget(String consistencyStr) async {
   Consistency consistency;
   if (consistencyStr == 'normal') {
     consistency = Consistency.normal;
@@ -58,6 +88,33 @@ Future<void> interactiveCallback(Uri? uri) async {
   } else if (consistencyStr == 'cabra') {
     consistency = Consistency.cabra;
   } else {
+    return;
+  }
+
+  // Anti-doble-toque: dos toques nerviosos creaban dos KKs (y dos puntos en
+  // el ranking). La guardia se arma ANTES de escribir nada.
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final lastRaw = await HomeWidget.getWidgetData<String>('lastQuickAddMillis');
+  if (shouldIgnoreQuickTap(lastAcceptedMillisRaw: lastRaw, nowMillis: now)) {
+    return;
+  }
+  await HomeWidget.saveWidgetData<String>('lastQuickAddMillis', '$now');
+
+  User? user = FirebaseAuth.instance.currentUser;
+  // Timeout: sin él, un authStateChanges que nunca emite colgaría el isolate de
+  // background del widget indefinidamente. La lógica pesada de logros ya se
+  // eliminó de addEvent en 2.1 (contadores agregados en el batch).
+  user ??= await FirebaseAuth.instance
+      .authStateChanges()
+      .first
+      .timeout(const Duration(seconds: 10), onTimeout: () => null);
+  if (user == null) {
+    await WidgetDataService.saveLastStatus('nosession');
+    await WidgetDataService.updateAllWidgets();
+    await _showWidgetNotification(
+      'Sesión necesaria 🔑',
+      'Abre KKpenco e inicia sesión para registrar desde el widget.',
+    );
     return;
   }
 
@@ -73,7 +130,7 @@ Future<void> interactiveCallback(Uri? uri) async {
   );
 
   final newEvent = KKEvent(
-    id: 'mock_${DateTime.now().millisecondsSinceEpoch}',
+    id: '', // el ID real lo genera addEvent
     userId: user.uid,
     displayName: user.displayName,
     timestamp: DateTime.now(),
@@ -89,9 +146,40 @@ Future<void> interactiveCallback(Uri? uri) async {
   );
 
   // Esperar el ack del servidor: este isolate de background muere al acabar
-  // y una escritura solo encolada en local no se sincronizaría hasta abrir la app
-  await dbService.addEvent(newEvent, waitForServerAck: true);
+  // y una escritura solo encolada en local no se sincronizaría hasta abrir la
+  // app. Con timeout: sin conexión, antes se colgaba y moría SIN avisar.
+  try {
+    await dbService
+        .addEvent(newEvent, waitForServerAck: true)
+        .timeout(const Duration(seconds: 12));
+  } on TimeoutException {
+    // La escritura queda en la persistencia local de Firestore y se
+    // sincroniza al abrir la app; el usuario merece saberlo.
+    await WidgetDataService.saveLastStatus('offline', lastPoop: DateTime.now());
+    await WidgetDataService.updateAllWidgets();
+    await _showWidgetNotification(
+      'Sin conexión 📡',
+      'Tu registro ($consistencyStr) se guardará al abrir la app.',
+    );
+    return;
+  } catch (e) {
+    debugPrint('Error en registro rápido desde widget: $e');
+    await _showWidgetNotification(
+      'No se pudo guardar 😢',
+      'Inténtalo de nuevo o abre la app.',
+    );
+    return;
+  }
 
+  await _showWidgetNotification(
+    '¡Registro añadido! 💩',
+    'Tu registro rápido ($consistencyStr) se ha guardado con éxito.',
+  );
+  // Refrescar racha/contadores/ranking que pintan los widgets
+  await WidgetDataService.refresh();
+}
+
+Future<void> _showWidgetNotification(String title, String body) async {
   try {
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
     const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/launcher_icon');
@@ -106,11 +194,11 @@ Future<void> interactiveCallback(Uri? uri) async {
       priority: Priority.high,
     );
     const platformChannelSpecifics = NotificationDetails(android: androidPlatformChannelSpecifics);
-    
+
     await flutterLocalNotificationsPlugin.show(
       id: DateTime.now().millisecond,
-      title: '¡Registro añadido! 💩',
-      body: 'Tu registro rápido ($consistencyStr) se ha guardado con éxito.',
+      title: title,
+      body: body,
       notificationDetails: platformChannelSpecifics,
     );
   } catch (e) {
@@ -229,6 +317,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
     ProfileScreen(),
   ];
 
+  StreamSubscription<Uri?>? _widgetClickSub;
+
   @override
   void initState() {
     super.initState();
@@ -244,6 +334,35 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
     // confirma por enlace, quizá con la app cerrada; changeEmail ya no escribe
     // en Firestore por adelantado).
     AuthService().syncEmailWithFirestore();
+    // Publicar racha/contadores/ranking para los widgets de escritorio
+    WidgetDataService.refresh();
+    // Deep links de los widgets: kkpenco://open?tab=N[&trono=1] (tanto si la
+    // app arranca desde el widget como si ya estaba abierta)
+    if (!useMockData && defaultTargetPlatform == TargetPlatform.android) {
+      HomeWidget.initiallyLaunchedFromHomeWidget().then(_handleWidgetLaunch);
+      _widgetClickSub = HomeWidget.widgetClicked.listen(_handleWidgetLaunch);
+    }
+  }
+
+  void _handleWidgetLaunch(Uri? uri) {
+    if (uri == null || !mounted || uri.host != 'open') return;
+
+    final tab = int.tryParse(uri.queryParameters['tab'] ?? '');
+    if (tab != null && tab >= 0 && tab < _screens.length && tab != _currentIndex) {
+      setState(() {
+        _previousIndex = _currentIndex;
+        _currentIndex = tab;
+        _builtTabs.add(tab);
+      });
+      _tabTransitionController.forward(from: 0.0);
+    }
+
+    // Widget «El Trono»: abrir con el cronómetro ya en marcha. El instante de
+    // inicio es la llegada del intent (los PendingIntent de RemoteViews son
+    // estáticos y no pueden llevar la hora del toque).
+    if (uri.queryParameters['trono'] == '1') {
+      TrackerScreen.tronoStartRequest.value = DateTime.now().millisecondsSinceEpoch;
+    }
   }
 
   Future<void> _setupPushNotifications() async {
@@ -257,6 +376,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
 
   @override
   void dispose() {
+    _widgetClickSub?.cancel();
     _tabTransitionController.dispose();
     super.dispose();
   }

@@ -50,13 +50,53 @@
             android:permission="android.permission.BIND_JOB_SERVICE" 
             android:exported="true"/>
 
-        <!-- Poop Widget Provider -->
+        <!-- Catálogo de widgets: cada provider es un diseño independiente en
+             el selector; cada miembro del grupo coloca el que prefiera -->
+
+        <!-- «Express» (4x1): botonera de consistencias. NO renombrar la clase:
+             eliminaría los widgets ya colocados -->
         <receiver android:name=".PoopWidgetProvider" android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data android:name="android.appwidget.provider"
                        android:resource="@xml/poop_widget_info" />
+        </receiver>
+
+        <!-- «La Mojona» (1x1): un botón, armado en dos toques -->
+        <receiver android:name=".MojonaWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                       android:resource="@xml/mojona_widget_info" />
+        </receiver>
+
+        <!-- «El Vigía» (2x2): racha y contadores con botón de registro -->
+        <receiver android:name=".VigiaWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                       android:resource="@xml/vigia_widget_info" />
+        </receiver>
+
+        <!-- «El Podio» (3x2): top 3 del grupo y tu posición -->
+        <receiver android:name=".PodioWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                       android:resource="@xml/podio_widget_info" />
+        </receiver>
+
+        <!-- «El Trono» (2x1): abre la app con el cronómetro en marcha -->
+        <receiver android:name=".TronoWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                       android:resource="@xml/trono_widget_info" />
         </receiver>
     </application>
     <!-- Required to query activities that can process text, see:

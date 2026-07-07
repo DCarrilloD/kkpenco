@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:minWidth="180dp"
-    android:minHeight="80dp"
-    android:targetCellWidth="4"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
     android:targetCellHeight="2"
     android:updatePeriodMillis="86400000"
-    android:initialLayout="@layout/poop_widget_layout"
-    android:previewLayout="@layout/poop_widget_layout"
-    android:description="@string/widget_express_description"
+    android:initialLayout="@layout/podio_widget_layout"
+    android:previewLayout="@layout/podio_widget_layout"
+    android:description="@string/widget_podio_description"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen">
 </appwidget-provider>

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp"
-    android:minHeight="80dp"
-    android:targetCellWidth="4"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="2"
     android:targetCellHeight="2"
     android:updatePeriodMillis="86400000"
-    android:initialLayout="@layout/poop_widget_layout"
-    android:previewLayout="@layout/poop_widget_layout"
-    android:description="@string/widget_express_description"
+    android:initialLayout="@layout/vigia_widget_layout"
+    android:previewLayout="@layout/vigia_widget_layout"
+    android:description="@string/widget_vigia_description"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen">
 </appwidget-provider>

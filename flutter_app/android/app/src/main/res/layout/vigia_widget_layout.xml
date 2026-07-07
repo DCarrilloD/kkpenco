@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/vigia_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/poop_widget_background"
+    android:padding="10dp"
+    android:gravity="center"
+    android:clickable="true"
+    android:focusable="true">
+
+    <!-- Racha: el dato que más pica, en grande -->
+    <TextView
+        android:id="@+id/vigia_streak"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🔥 0 días"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:maxLines="1"/>
+
+    <TextView
+        android:id="@+id/vigia_counters"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hoy: — 💩  ·  Mes: —"
+        android:textColor="@color/widget_text_primary"
+        android:textSize="12sp"
+        android:layout_marginTop="4dp"
+        android:maxLines="1"/>
+
+    <TextView
+        android:id="@+id/vigia_last"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="9sp"
+        android:layout_marginTop="2dp"
+        android:maxLines="1"
+        android:ellipsize="end"/>
+
+    <!-- Botón de registro rápido Normal -->
+    <LinearLayout
+        android:id="@+id/vigia_btn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:background="?android:attr/selectableItemBackground"
+        android:clickable="true"
+        android:focusable="true"
+        android:padding="6dp"
+        android:layout_marginTop="6dp">
+
+        <ImageView
+            android:id="@+id/vigia_btn_icon"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:contentDescription="Registrar KK Normal"/>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Registrar"
+            android:textColor="@color/widget_accent"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:layout_marginStart="6dp"/>
+    </LinearLayout>
+</LinearLayout>

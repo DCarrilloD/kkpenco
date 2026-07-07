@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widgets de escritorio: tema oscuro (el look original) -->
+    <color name="widget_bg">#1E1E1E</color>
+    <color name="widget_stroke">#2B2B2B</color>
+    <color name="widget_text_primary">#FFFFFF</color>
+    <color name="widget_text_secondary">#BCAAA4</color>
+    <color name="widget_accent">#FFB74D</color>
+</resources>

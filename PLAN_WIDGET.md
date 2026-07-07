@@ -29,7 +29,7 @@
 
 ## Fase 1 — Robustez del registro rápido 🔴 (aplica a TODOS los diseños)
 
-### [ ] 1.1 Feedback de resultado real (éxito / offline / sin sesión)
+### [x] 1.1 Feedback de resultado real (éxito / offline / sin sesión)
 - **Dónde**: `interactiveCallback` (`main.dart`).
 - Poner timeout al `addEvent` (~12 s). Tres desenlaces, cada uno con su notificación:
   - Éxito → la actual ("¡Registro añadido! 💩").
@@ -38,18 +38,18 @@
 - Además del aviso, escribir el estado en el propio widget (ver 2.1): la notificación puede estar silenciada.
 - **Esfuerzo**: pequeño.
 
-### [ ] 1.2 Anti-doble-toque
+### [x] 1.2 Anti-doble-toque
 - Guardar `lastQuickAddMillis` vía `HomeWidget.saveWidgetData` al entrar al callback; si el anterior es de hace < 10 s, ignorar el toque (y avisar "¡Tranquilo, ya está registrada! 😅" solo si fue < 2 s… opcional).
 - **Esfuerzo**: pequeño. **Test**: unitario de la función pura de decisión (extraerla a un helper testable).
 
-### [ ] 1.3 Limpiar el `id: 'mock_...'` legacy del evento del isolate (usar `id: ''`).
+### [x] 1.3 Limpiar el `id: 'mock_...'` legacy del evento del isolate (usar `id: ''`).
 - **Esfuerzo**: trivial.
 
 ---
 
 ## Fase 2 — Datos en el widget (infraestructura) 🟠
 
-### [ ] 2.1 Canal de datos app → widget
+### [x] 2.1 Canal de datos app → widget
 - La app escribe con `HomeWidget.saveWidgetData` + `HomeWidget.updateWidget` en estos momentos:
   - al **abrir la app** con sesión (junto a `syncEmailWithFirestore` en `MainNavigationScreen.initState`),
   - al **registrar** una KK (tracker y también el isolate del widget al terminar),
@@ -60,7 +60,7 @@
 - **Limitación honesta**: los datos se refrescan cuando la app (o el isolate) escribe — no hay polling contra Firestore desde el widget. Es suficiente: la racha/contadores solo cambian cuando TÚ registras; el ranking se refresca al abrir la app. Opcional futuro: un data-message FCM que despierte el refresco (no lo recomiendo aún: batería/complejidad).
 - **Esfuerzo**: medio.
 
-### [ ] 2.2 Estado "última KK" en el widget Express
+### [x] 2.2 Estado "última KK" en el widget Express
 - Línea inferior en el layout actual: "Última: 14:32 ✓" / "⏳ pendiente de sincronizar" / "🔑 inicia sesión", leyendo `lastPoopMillis`/`lastStatus`. El provider ya se re-renderiza con `updateWidget`.
 - **Esfuerzo**: pequeño (depende de 2.1).
 
@@ -70,7 +70,7 @@
 
 > Cada diseño = su `AppWidgetProvider` Kotlin + layout + `appwidget-provider` XML + entrada en el AndroidManifest. Todos conviven en el selector de widgets. El Express actual se mantiene como D1. Los datos vienen de la Fase 2; los registros rápidos reutilizan `interactiveCallback` tal cual (mismo esquema de URI).
 
-### [ ] D1 · «Express» — el actual, mejorado (4×1)
+### [x] D1 · «Express» — el actual, mejorado (4×1)
 ```
 ┌──────────────────────────────────────┐
 │         KKpenco Express ⚡           │
@@ -81,7 +81,7 @@
 ```
 - Solo recibe 1.x + 2.2. Para quien quiere elegir consistencia al vuelo.
 
-### [ ] D2 · «La Mojona» — minimal 1×1
+### [x] D2 · «La Mojona» — minimal 1×1
 ```
 ┌────────┐
 │   💩   │   1 toque  → se "arma" (borde ámbar, 5 s)
@@ -92,7 +92,7 @@
 - Tap fuera de la ventana de armado → vuelve a estado normal.
 - Para minimalistas. **Esfuerzo**: pequeño-medio (el estado armado es lo único nuevo).
 
-### [ ] D3 · «El Vigía» — racha y contadores 2×2
+### [x] D3 · «El Vigía» — racha y contadores 2×2
 ```
 ┌──────────────────┐
 │  🔥 12 días      │
@@ -105,7 +105,7 @@
 - Racha grande arriba (el dato que más pica), contadores debajo, botón de registro Normal al pie. Tocar cualquier zona no-botón abre la app.
 - El diseño con mejor relación valor/esfuerzo una vez exista la Fase 2. **Esfuerzo**: pequeño-medio.
 
-### [ ] D4 · «El Podio» — mini-ranking 3×2
+### [x] D4 · «El Podio» — mini-ranking 3×2
 ```
 ┌───────────────────────────┐
 │  🥇 David      34 💩      │
@@ -117,7 +117,7 @@
 - Snapshot del top-3 + tu posición (claves `rankTop`/`rankPosition` de 2.1, refrescadas al abrir la app). Tocar abre la app en la pestaña Ranking (deep link: `HomeWidget.widgetClicked`/URI inicial → `MainNavigationScreen` con índice 1; hay que añadir ese plumbing, no existe router).
 - El más "social": pique visible desde el escritorio. **Esfuerzo**: medio (deep link + render de lista en RemoteViews).
 
-### [ ] D5 · «El Trono» — cronómetro Zen 2×1 (opcional, el más ambicioso)
+### [x] D5 · «El Trono» — cronómetro Zen 2×1 (opcional, el más ambicioso)
 ```
 ┌────────────────────┐
 │ 🚽 Sentarse al     │
@@ -133,18 +133,29 @@
 
 ## Fase 4 — Pulido de plataforma 🟡
 
-### [ ] 4.1 Selector de widgets decente
+### [x] 4.1 Selector de widgets decente
 - `previewLayout` (Android 12+) + `previewImage` (fallback) + `android:description` por diseño; `targetCellWidth/Height` para tamaños correctos en Android 12+ y `minWidth/minHeight` como fallback.
 
-### [ ] 4.2 Tema claro/oscuro
+### [x] 4.2 Tema claro/oscuro
 - `res/drawable-night/` para el fondo y colores de texto vía `res/values(-night)/colors.xml` en todos los layouts (hoy el negro fijo canta en fondos claros). Material You real (colores dinámicos) es posible en 12+ con `@android:color/system_*` — opcional, solo si apetece.
 
-### [ ] 4.3 `resizeMode="horizontal|vertical"` y layouts que aguanten el resize sin recortes.
+### [x] 4.3 `resizeMode="horizontal|vertical"` y layouts que aguanten el resize sin recortes.
 
 ### [ ] 4.4 Pruebas manuales en Android real (no hay forma razonable de test automático de RemoteViews)
 - Checklist por diseño: colocar desde el selector (preview correcta), toque con red, toque sin red, doble toque, sesión cerrada, resize, tema claro y oscuro, reinicio del launcher (los bitmaps se regeneran en `onUpdate`).
 
 ---
+
+## Cierre (2026-07-07)
+
+Implementado TODO el plan salvo 4.4 (pruebas manuales en Android real, pendientes). Notas de lo hecho:
+- `WidgetDataService` (`lib/services/widget_data_service.dart`): una sola query (ranking, incluye el doc propio) publica racha, contadores (de `achStats`), última KK, posición y top-3; **todos los valores como String** (el canal guarda los int de Dart como Integer o Long según tamaño y un `getInt/getLong` equivocado en Kotlin revienta). Se llama al abrir la app, al registrar (tracker e isolate) y al borrar.
+- Funciones puras testeadas (`shouldIgnoreQuickTap`, `mojonaTapConfirms`) en `test/widget_quick_tap_test.dart` (47/47 tests).
+- `interactiveCallback` enruta por `uri.host` (`express` | `mojona`); timeout de 12 s en `addEvent` con notificación de éxito/offline/sin sesión.
+- Deep links `kkpenco://open?tab=N[&trono=1]`: `MainNavigationScreen` escucha `initiallyLaunchedFromHomeWidget` + `widgetClicked`; el Trono usa `TrackerScreen.tronoStartRequest` (ValueNotifier estático) — el instante de inicio es la llegada del intent, no el toque (los PendingIntent de RemoteViews son estáticos; diferencia ~1 s).
+- Kotlin: dibujo compartido en `PoopIconDrawer`, lectura de datos en `WidgetData`; providers `Mojona/Vigia/Podio/TronoWidgetProvider` + Express refactorizado (misma clase, con línea de estado).
+- Tema day/night vía `values(-night)/colors.xml`; `updatePeriodMillis` diario solo para refrescar el formato de fechas (los re-render reales van por `updateWidget`).
+- Verificado: `flutter analyze` limpio, 47/47 tests, `apk --debug` compila (valida Kotlin+XML+manifest). **Pendiente 4.4**: checklist manual en el móvil.
 
 ## Orden global sugerido
 

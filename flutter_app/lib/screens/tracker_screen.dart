@@ -11,11 +11,17 @@ import '../models/event.dart';
 import '../models/chat_message.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/widget_data_service.dart';
 import '../widgets/responsive_layout.dart';
 import 'juanito_mode_screen.dart';
 
 class TrackerScreen extends StatefulWidget {
   const TrackerScreen({super.key});
+
+  /// Petición externa de arranque del cronómetro (widget «El Trono»):
+  /// millisSinceEpoch del instante de inicio. La escribe MainNavigationScreen
+  /// al recibir el deep link y el tracker la consume al montarse o al vuelo.
+  static final ValueNotifier<int?> tronoStartRequest = ValueNotifier<int?>(null);
 
   @override
   State<TrackerScreen> createState() => _TrackerScreenState();
@@ -62,6 +68,24 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
     _loadFirstPage();
     _loadAutoGeolocatePreference();
     _checkAdminStatus();
+    TrackerScreen.tronoStartRequest.addListener(_handleTronoRequest);
+    // Consumir una petición que llegara antes de montar esta pantalla
+    WidgetsBinding.instance.addPostFrameCallback((_) => _handleTronoRequest());
+  }
+
+  // Widget «El Trono»: arranca el cronómetro desde el instante pedido
+  void _handleTronoRequest() {
+    final startMillis = TrackerScreen.tronoStartRequest.value;
+    if (startMillis == null || !mounted) return;
+    TrackerScreen.tronoStartRequest.value = null; // consumida
+
+    _stopwatchTimer?.cancel();
+    setState(() {
+      _isStopwatchRunning = true;
+      _stopwatchStart = DateTime.fromMillisecondsSinceEpoch(startMillis);
+      _syncStopwatchSeconds();
+    });
+    _startStopwatchTicker();
   }
 
   Future<void> _checkAdminStatus() async {
@@ -99,6 +123,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
 
   @override
   void dispose() {
+    TrackerScreen.tronoStartRequest.removeListener(_handleTronoRequest);
     WidgetsBinding.instance.removeObserver(this);
     _stopwatchTimer?.cancel();
     _scrollController.dispose();
@@ -459,6 +484,9 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
         _eventsList.insert(0, savedEvent);
       });
 
+      // Actualizar los widgets de escritorio (racha, contadores, última KK)
+      unawaited(WidgetDataService.refresh());
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -591,10 +619,13 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
 
     try {
       await _dbService.deleteEvent(event);
-      
+
       setState(() {
         _eventsList.removeWhere((e) => e.id == event.id);
       });
+
+      // Actualizar los widgets de escritorio (racha, contadores, última KK)
+      unawaited(WidgetDataService.refresh());
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
