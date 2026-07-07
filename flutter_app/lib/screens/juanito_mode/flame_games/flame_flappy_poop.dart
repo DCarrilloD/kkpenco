@@ -5,8 +5,7 @@ import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
-import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio;
+import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio, FloatingTextComponent;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -44,9 +43,7 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    
-    await FlameAudio.audioCache.loadAll(['jump.wav', 'hit.wav']);
-    
+
     // Añadir fondo
     background = ParallaxBackground();
     add(background);
@@ -130,15 +127,37 @@ class FlappyPoopFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
 
 class ParallaxBackground extends PositionComponent with HasGameReference<FlappyPoopFlameGame> {
   double bgX = 0;
-  
+
+  // Tiempo acumulado con dt para el parpadeo de estrellas (pausa-safe, sin
+  // leer el reloj del sistema por frame)
+  double _twinkleTime = 0;
+
+  // Gradiente + rejilla solo cambian con el nivel: se graban en un Picture y
+  // se regeneran al subir de nivel, no en cada frame.
+  ui.Picture? _staticLayer;
+  int _builtLevel = -1;
+
   @override
   void update(double dt) {
     super.update(dt);
     bgX = (bgX - 25.0 * dt) % game.size.x;
+    _twinkleTime += dt;
   }
 
   @override
-  void render(Canvas canvas) {
+  void onRemove() {
+    _staticLayer?.dispose();
+    _staticLayer = null;
+    super.onRemove();
+  }
+
+  void _rebuildStaticLayer() {
+    _staticLayer?.dispose();
+    _builtLevel = game.level;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
     // 1. Gradiente de fondo según el nivel
     Color skyTop;
     Color skyBottom;
@@ -160,17 +179,36 @@ class ParallaxBackground extends PositionComponent with HasGameReference<FlappyP
       ..shader = ui.Gradient.linear(Offset.zero, Offset(0, game.size.y), [skyTop, skyBottom]);
     canvas.drawRect(Rect.fromLTWH(0, 0, game.size.x, game.size.y), bgPaint);
 
-    // 2. Estrellas lejanas
+    // 2. Malla/Grid de fondo
+    final gridPaint = Paint()..color = Colors.white.withAlpha(12)..strokeWidth = 0.5;
+    for (double i = 0; i < game.size.x; i += 40) {
+      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
+    }
+    for (double j = 0; j < game.size.y; j += 40) {
+      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    }
+
+    _staticLayer = recorder.endRecording();
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (_staticLayer == null || _builtLevel != game.level) {
+      _rebuildStaticLayer();
+    }
+    canvas.drawPicture(_staticLayer!);
+
+    // Estrellas lejanas
     final starsRand = Random(123);
     for (int i = 0; i < 20; i++) {
       double sx = (starsRand.nextDouble() * game.size.x + bgX * 0.2) % game.size.x;
       double sy = starsRand.nextDouble() * game.size.y;
       double size = 0.5 + starsRand.nextDouble() * 1.0;
-      double opacity = 0.2 + 0.8 * sin(DateTime.now().millisecondsSinceEpoch * 0.003 + i).abs();
+      double opacity = 0.2 + 0.8 * sin(_twinkleTime * 3.0 + i).abs();
       canvas.drawCircle(Offset(sx, sy), size, Paint()..color = Colors.white.withAlpha((opacity * 255).toInt()));
     }
 
-    // 3. Nubes con parallax
+    // Nubes con parallax
     final cloudPaint = Paint()..color = Colors.white.withAlpha(22);
     for (int i = 0; i < 3; i++) {
       double cloudX = (bgX + (i * game.size.x / 1.5)) % (game.size.x + 120) - 60;
@@ -178,15 +216,6 @@ class ParallaxBackground extends PositionComponent with HasGameReference<FlappyP
       canvas.drawCircle(Offset(cloudX, cloudY), 24, cloudPaint);
       canvas.drawCircle(Offset(cloudX + 14, cloudY - 4), 20, cloudPaint);
       canvas.drawCircle(Offset(cloudX - 14, cloudY - 4), 20, cloudPaint);
-    }
-
-    // 4. Malla/Grid de fondo
-    final gridPaint = Paint()..color = Colors.white.withAlpha(12)..strokeWidth = 0.5;
-    for (double i = 0; i < game.size.x; i += 40) {
-      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
-    }
-    for (double j = 0; j < game.size.y; j += 40) {
-      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
     }
   }
 }
@@ -209,7 +238,8 @@ class PoopPlayer extends PositionComponent with HasGameReference<FlappyPoopFlame
 
   @override
   Future<void> onLoad() async {
-    cachedPoopImage = await SpriteRasterizer.rasterize(32, 32, (canvas) {
+    // Textura compartida por skin entre partidas; se libera al salir del modo
+    cachedPoopImage = await SpriteCache.getOrCreate('flappy_player|$skin', 32, 32, (canvas) {
       PoopSkinDrawer.drawPoop(canvas, const Offset(16, 16), 32.0, skin: skin);
     });
   }
@@ -284,9 +314,26 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
   late RectangleHitbox bottomHitbox;
   CircleHitbox? starHitbox;
 
+  static const double pipeWidth = 50.0;
+
+  // Los gradientes solo dependen del ancho (fijo): compartidos entre todas las
+  // tuberías y frames, en vez de crear dos ui.Gradient por tubería y por frame
+  static final Paint _pipePaint = Paint()
+    ..shader = ui.Gradient.linear(
+      const Offset(0, 0), const Offset(pipeWidth, 0),
+      [const Color(0xFF166534), const Color(0xFF22C55E), const Color(0xFF4ADE80), const Color(0xFF166534)],
+      [0.0, 0.35, 0.5, 1.0],
+    );
+  static final Paint _rimPaint = Paint()
+    ..shader = ui.Gradient.linear(
+      const Offset(-3, 0), const Offset(pipeWidth + 3, 0),
+      [const Color(0xFF15803D), const Color(0xFF4ADE80), const Color(0xFF86EFAC), const Color(0xFF166534)],
+      [0.0, 0.35, 0.5, 1.0],
+    );
+
   PipePair({required this.gapY, required this.gapHeight, required this.hasStar}) {
     baseGapY = gapY;
-    width = 50.0;
+    width = pipeWidth;
   }
 
   @override
@@ -382,29 +429,15 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
     canvas.drawRect(Rect.fromLTWH(5, 0, width, gapY), shadowPaint);
     canvas.drawRect(Rect.fromLTWH(5, gapY + gapHeight, width, height - (gapY + gapHeight)), shadowPaint);
 
-    final pipeGrad = ui.Gradient.linear(
-      const Offset(0, 0), Offset(width, 0),
-      [const Color(0xFF166534), const Color(0xFF22C55E), const Color(0xFF4ADE80), const Color(0xFF166534)],
-      [0.0, 0.35, 0.5, 1.0],
-    );
-    final rimGrad = ui.Gradient.linear(
-      const Offset(-3, 0), Offset(width + 3, 0),
-      [const Color(0xFF15803D), const Color(0xFF4ADE80), const Color(0xFF86EFAC), const Color(0xFF166534)],
-      [0.0, 0.35, 0.5, 1.0],
-    );
-
-    final pipePaint = Paint()..shader = pipeGrad;
-    final rimPaint = Paint()..shader = rimGrad;
-
     // Tubería superior
-    canvas.drawRect(Rect.fromLTWH(0, 0, width, gapY), pipePaint);
-    canvas.drawRect(Rect.fromLTWH(-3, gapY - 18, width + 6, 18), rimPaint);
+    canvas.drawRect(Rect.fromLTWH(0, 0, width, gapY), _pipePaint);
+    canvas.drawRect(Rect.fromLTWH(-3, gapY - 18, width + 6, 18), _rimPaint);
     canvas.drawRect(Rect.fromLTWH(0, 0, width, gapY), strokePaint);
     canvas.drawRect(Rect.fromLTWH(-3, gapY - 18, width + 6, 18), strokePaint);
 
     // Tubería inferior
-    canvas.drawRect(Rect.fromLTWH(0, gapY + gapHeight, width, height - (gapY + gapHeight)), pipePaint);
-    canvas.drawRect(Rect.fromLTWH(-3, gapY + gapHeight, width + 6, 18), rimPaint);
+    canvas.drawRect(Rect.fromLTWH(0, gapY + gapHeight, width, height - (gapY + gapHeight)), _pipePaint);
+    canvas.drawRect(Rect.fromLTWH(-3, gapY + gapHeight, width + 6, 18), _rimPaint);
     canvas.drawRect(Rect.fromLTWH(0, gapY + gapHeight, width, height - (gapY + gapHeight)), strokePaint);
     canvas.drawRect(Rect.fromLTWH(-3, gapY + gapHeight, width + 6, 18), strokePaint);
 
@@ -412,43 +445,7 @@ class PipePair extends PositionComponent with HasGameReference<FlappyPoopFlameGa
     if (hasStar && !starCollected) {
       final starCenter = Offset(width / 2, gapY + gapHeight / 2);
       canvas.drawCircle(starCenter, 12, Paint()..color = Colors.amber.withAlpha(80)..maskFilter = const MaskFilter.blur(BlurStyle.solid, 6));
-      final starPainter = TextPainter(text: const TextSpan(text: '⭐', style: TextStyle(fontSize: 20)), textDirection: TextDirection.ltr)..layout();
-      starPainter.paint(canvas, Offset(starCenter.dx - starPainter.width / 2, starCenter.dy - starPainter.height / 2));
+      EmojiSprites.draw(canvas, '⭐', 20, starCenter);
     }
-  }
-}
-
-class FloatingTextComponent extends PositionComponent {
-  final String text;
-  final Color color;
-  final double fontSize;
-  double life = 1.0;
-
-  FloatingTextComponent({required this.text, required this.color, required this.fontSize});
-
-  @override
-  void update(double dt) {
-    super.update(dt);
-    life -= dt;
-    position.y -= dt * 50;
-    if (life <= 0) removeFromParent();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color.withAlpha((life.clamp(0.0, 1.0) * 255).toInt()),
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1))],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
   }
 }

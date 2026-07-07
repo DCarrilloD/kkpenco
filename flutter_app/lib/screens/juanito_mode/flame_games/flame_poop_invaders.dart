@@ -6,8 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio;
+import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio, FloatingTextComponent;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -65,13 +64,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    
-    await FlameAudio.audioCache.loadAll([
-      'shoot.wav',
-      'explosion.wav',
-      'hit.wav',
-    ]);
-    
+
     if (activeBuffCategory == AchievementCategory.games) {
       lives++;
       maxLives++; // El corazón 💖 no debe restar la vida extra del buff al hacer clamp
@@ -252,7 +245,7 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
   }
 
   void addFloatingText(String text, Vector2 pos, Color color, {double size = 14.0}) {
-    add(FloatingTextComponent(text: text, color: color, fontSize: size)..position = pos);
+    add(FloatingTextComponent(text: text, color: color, fontSize: size, wobble: true)..position = pos);
   }
 
   void spawnLaser({required Vector2 pos, required double vy, double vx = 0, required bool fromPlayer, String type = 'normal'}) {
@@ -299,6 +292,10 @@ class PoopInvadersFlameGame extends FlameGame with PanDetector, HasCollisionDete
 class DeepSpaceBackground extends PositionComponent with HasGameReference<PoopInvadersFlameGame> {
   final List<GameStar> _stars = [];
 
+  // Fondo y rejilla son estáticos: se graban una vez en un Picture en vez de
+  // regenerar el gradiente y ~40 drawLine con sus Paint en cada frame.
+  ui.Picture? _staticLayer;
+
   @override
   void onMount() {
     super.onMount();
@@ -311,6 +308,40 @@ class DeepSpaceBackground extends PositionComponent with HasGameReference<PoopIn
         size: 0.5 + rand.nextDouble() * 2.0,
       ));
     }
+    _rebuildStaticLayer();
+  }
+
+  @override
+  void onGameResize(Vector2 size) {
+    super.onGameResize(size);
+    if (isMounted) _rebuildStaticLayer();
+  }
+
+  @override
+  void onRemove() {
+    _staticLayer?.dispose();
+    _staticLayer = null;
+    super.onRemove();
+  }
+
+  void _rebuildStaticLayer() {
+    _staticLayer?.dispose();
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final bgPaint = Paint()..color = const Color(0xFF030712);
+    canvas.drawRect(Rect.fromLTWH(0, 0, game.size.x, game.size.y), bgPaint);
+
+    // Neon grid
+    final gridPaint = Paint()..color = Colors.greenAccent.withAlpha(8)..strokeWidth = 0.5;
+    for (double i = 0; i < game.size.x; i += 40) {
+      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
+    }
+    for (double j = 0; j < game.size.y; j += 40) {
+      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
+    }
+
+    _staticLayer = recorder.endRecording();
   }
 
   @override
@@ -327,21 +358,12 @@ class DeepSpaceBackground extends PositionComponent with HasGameReference<PoopIn
 
   @override
   void render(Canvas canvas) {
-    final bgPaint = Paint()..color = const Color(0xFF030712);
-    canvas.drawRect(Rect.fromLTWH(0, 0, game.size.x, game.size.y), bgPaint);
+    final staticLayer = _staticLayer;
+    if (staticLayer != null) canvas.drawPicture(staticLayer);
 
     for (var star in _stars) {
       final starPaint = Paint()..color = Colors.white.withAlpha((150 * (star.size / 2.5)).clamp(40, 255).toInt());
       canvas.drawCircle(Offset(star.x, star.y), star.size, starPaint);
-    }
-
-    // Neon grid
-    final gridPaint = Paint()..color = Colors.greenAccent.withAlpha(8)..strokeWidth = 0.5;
-    for (double i = 0; i < game.size.x; i += 40) {
-      canvas.drawLine(Offset(i, 0), Offset(i, game.size.y), gridPaint);
-    }
-    for (double j = 0; j < game.size.y; j += 40) {
-      canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
     }
   }
 }
@@ -360,6 +382,10 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
   double burstShotTime = 0;
   bool hasShield = false;
 
+  // Tiempo acumulado con dt para animar las llamas (no avanza en pausa y
+  // evita leer el reloj del sistema en cada frame)
+  double _flameTime = 0;
+
   ui.Image? cachedShipImage;
 
   PlayerShip({required this.skin, bool startTriple = false, bool startBurst = false}) {
@@ -373,7 +399,8 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
 
   @override
   Future<void> onLoad() async {
-    cachedShipImage = await SpriteRasterizer.rasterize(100, 100, (canvas) {
+    // Textura compartida por skin entre partidas; se libera al salir del modo
+    cachedShipImage = await SpriteCache.getOrCreate('invaders_ship|$skin', 100, 100, (canvas) {
       const center = Offset(50, 50);
       _drawToiletVectorStatic(canvas, center, 60);
       PoopSkinDrawer.drawPoop(canvas, Offset(center.dx, center.dy - 11), 32, skin: skin);
@@ -381,16 +408,10 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
   }
 
   @override
-  void onRemove() {
-    cachedShipImage?.dispose();
-    cachedShipImage = null;
-    super.onRemove();
-  }
-
-  @override
   void update(double dt) {
     super.update(dt);
 
+    _flameTime += dt;
     tiltAngle *= 0.88; // Decaimiento suave de la inercia
 
     if (tripleShotTime > 0) tripleShotTime -= dt;
@@ -409,7 +430,8 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
   }
 
   void _fireLaser() {
-    HapticFeedback.selectionClick();
+    // Sin háptico: el disparo es automático y continuo (hasta ~7/s con burst)
+    // y vibrar en cada tick castigaba la batería sin aportar nada.
     double lSpeed = -400.0;
     
     if (tripleShotTime > 0) {
@@ -469,8 +491,7 @@ class PlayerShip extends PositionComponent with HasGameReference<PoopInvadersFla
 
   void _drawAnimatedFlames(Canvas canvas, Offset center, double size) {
     final double half = size / 2;
-    final timeMs = DateTime.now().millisecondsSinceEpoch;
-    final double fireHeight = half * 0.55 + sin(timeMs * 0.035) * 3.5;
+    final double fireHeight = half * 0.55 + sin(_flameTime * 35.0) * 3.5;
     final flamePaint = Paint()..shader = ui.Gradient.linear(Offset(0, center.dy + half * 0.9), Offset(0, center.dy + half * 0.9 + fireHeight), [Colors.cyanAccent, Colors.blueAccent.withAlpha(0)]);
     canvas.drawRect(Rect.fromLTWH(center.dx - half * 1.18, center.dy + half * 0.9, 6, fireHeight), flamePaint);
     canvas.drawRect(Rect.fromLTWH(center.dx + half * 0.98, center.dy + half * 0.9, 6, fireHeight), flamePaint);
@@ -534,20 +555,20 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
 
   ui.Image? cachedLaserImage;
 
-  @override
-  Future<void> onLoad() async {
-    cachedLaserImage = await SpriteRasterizer.rasterize(size.x * 3, size.y * 3, (canvas) {
-      _renderLaser(canvas, Offset(size.x * 1.5, size.y * 1.5));
-    });
-  }
+  // Tiempo de vuelo acumulado con dt (zigzag del rayo del jefe eléctrico)
+  double _age = 0;
 
   @override
-  void onRemove() {
-    // Liberar la textura nativa: sin esto cada láser deja un ui.Image sin
-    // disponer y la memoria crece sin tope (ralentización progresiva).
-    cachedLaserImage?.dispose();
-    cachedLaserImage = null;
-    super.onRemove();
+  Future<void> onLoad() async {
+    // Solo existen ~6 variantes visuales de láser: la textura se comparte por
+    // tipo entre instancias y partidas en vez de rasterizar en cada disparo
+    // (con burst eran ~7 PictureRecorder→toImage por segundo).
+    cachedLaserImage = await SpriteCache.getOrCreate(
+      'invaders_laser|$type|$fromPlayer',
+      size.x * 3,
+      size.y * 3,
+      (canvas) => _renderLaser(canvas, Offset(size.x * 1.5, size.y * 1.5)),
+    );
   }
 
   void _disableAndPool() {
@@ -557,7 +578,8 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
   @override
   void update(double dt) {
     super.update(dt);
-    
+    _age += dt;
+
     double currentVy = vy;
     if (!fromPlayer && game.activeBuffCategory == AchievementCategory.locations) {
       currentVy *= 0.90;
@@ -565,7 +587,7 @@ class LaserComponent extends PositionComponent with HasGameReference<PoopInvader
 
     if (!fromPlayer) {
       if (type == 'lightning') {
-        vx = sin(DateTime.now().millisecondsSinceEpoch * 0.02) * 250.0;
+        vx = sin(_age * 20.0) * 250.0;
       } else if (type == 'acid' && position.y >= game.size.y * 0.5) {
         // Divide into 2
         game.spawnLaser(pos: position.clone(), vy: 200.0, vx: -100.0, fromPlayer: false, type: 'acid_sub');
@@ -673,26 +695,19 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // El buffer medirá size.x * 2 para evitar recortes visuales de cilios/antenas/formas anchas
-    cachedEnemyImage = await SpriteRasterizer.rasterize(size.x * 2, size.y * 2, (canvas) {
+    // Textura compartida por tipo visual entre todos los enemigos y partidas
+    // (antes cada enemigo de cada oleada regeneraba la misma rasterización).
+    // El buffer mide size.x * 2 para evitar recortes visuales de cilios/antenas/formas anchas
+    final cacheKey = 'invaders_enemy|$visualType|$type|$bossType';
+    cachedEnemyImage = await SpriteCache.getOrCreate(cacheKey, size.x * 2, size.y * 2, (canvas) {
       _drawEnemyVector(canvas, Offset(size.x, size.y), size.x / 2, isDamaged: false);
     });
 
     if (visualType == 'alien' || type == 'boss') {
-      cachedDamagedEnemyImage = await SpriteRasterizer.rasterize(size.x * 2, size.y * 2, (canvas) {
+      cachedDamagedEnemyImage = await SpriteCache.getOrCreate('$cacheKey|damaged', size.x * 2, size.y * 2, (canvas) {
         _drawEnemyVector(canvas, Offset(size.x, size.y), size.x / 2, isDamaged: true);
       });
     }
-  }
-
-  @override
-  void onRemove() {
-    // Liberar las texturas nativas del enemigo al morir/salir de pantalla.
-    cachedEnemyImage?.dispose();
-    cachedEnemyImage = null;
-    cachedDamagedEnemyImage?.dispose();
-    cachedDamagedEnemyImage = null;
-    super.onRemove();
   }
 
   @override
@@ -834,7 +849,8 @@ class InvaderEnemy extends PositionComponent with HasGameReference<PoopInvadersF
     if (type == 'boss') {
       final center = Offset(size.x / 2, size.y / 2);
       final double half = size.x / 2;
-      final timeMs = DateTime.now().millisecondsSinceEpoch;
+      // Tiempo acumulado con dt del propio componente (pausa-safe)
+      final timeMs = (time * 1000).toInt();
       if (bossType == 'fire') {
         final double wave1 = sin(timeMs * 0.02) * 4.0;
         final double wave2 = cos(timeMs * 0.025) * 3.0;
@@ -1026,46 +1042,7 @@ class PowerupItem extends PositionComponent with HasGameReference<PoopInvadersFl
     final center = Offset(size.x / 2, size.y / 2);
     canvas.drawCircle(center, 14, Paint()..color = itemColor.withAlpha(90)..maskFilter = const MaskFilter.blur(BlurStyle.solid, 6));
 
-    final ft = TextPainter(text: TextSpan(text: emoji, style: const TextStyle(fontSize: 16)), textDirection: TextDirection.ltr);
-    ft.layout();
-    ft.paint(canvas, Offset(center.dx - ft.width / 2, center.dy - ft.height / 2));
-  }
-}
-
-class FloatingTextComponent extends PositionComponent {
-  final String text;
-  final Color color;
-  final double fontSize;
-  double life = 1.0;
-  double targetAngle = 0.0;
-
-  FloatingTextComponent({required this.text, required this.color, required this.fontSize}) {
-    anchor = Anchor.center;
-    targetAngle = (Random().nextDouble() - 0.5) * 0.3;
-    angle = targetAngle;
-  }
-
-  @override
-  void update(double dt) {
-    super.update(dt);
-    life -= dt;
-    position.y -= dt * 45;
-    angle = ui.lerpDouble(angle, targetAngle, dt * 5.0) ?? angle;
-
-    double scaleVal = life > 0.8 ? 1.0 + (life - 0.8) * 1.8 : 1.0;
-    scale = Vector2.all(scaleVal);
-
-    if (life <= 0) removeFromParent();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final textPainter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: color.withAlpha((life.clamp(0.0, 1.0) * 255).toInt()), fontSize: fontSize, fontWeight: FontWeight.w900, shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1))])),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
+    EmojiSprites.draw(canvas, emoji, 16, center);
   }
 }
 
@@ -1106,9 +1083,8 @@ class GameParticleComponent extends PositionComponent with HasGameReference<Poop
   void render(Canvas canvas) {
     canvas.save();
     canvas.scale(scaleMod);
-    final pPainter = TextPainter(text: TextSpan(text: emoji, style: TextStyle(fontSize: 16, color: Colors.white.withAlpha((life.clamp(0.0, 1.0) * 255).toInt()))), textDirection: TextDirection.ltr);
-    pPainter.layout();
-    pPainter.paint(canvas, Offset(-pPainter.width / 2, -pPainter.height / 2));
+    // Textura de emoji cacheada: nada de TextPainter por partícula y por frame
+    EmojiSprites.draw(canvas, emoji, 16, Offset.zero, opacity: life);
     canvas.restore();
   }
 }

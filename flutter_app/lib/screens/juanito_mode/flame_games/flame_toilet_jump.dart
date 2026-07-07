@@ -6,8 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio;
+import '../shared_game_components.dart' show PoopSkinDrawer, GameAudio, FloatingTextComponent;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -59,9 +58,8 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
   Future<void> onLoad() async {
     super.onLoad();
 
-    await FlameAudio.audioCache.loadAll(['jump.wav', 'coin.wav', 'hit.wav']);
-
-    cachedBacteriaImage = await SpriteRasterizer.rasterize(30, 30, (canvas) {
+    // Textura compartida entre partidas; se libera al salir del Modo Juanito
+    cachedBacteriaImage = await SpriteCache.getOrCreate('jump_bacteria', 30, 30, (canvas) {
       const center = Offset(15, 15);
       const half = 15.0;
       final paint = Paint()
@@ -235,36 +233,63 @@ class ToiletJumpFlameGame extends FlameGame with TapCallbacks, HasCollisionDetec
 // --- COMPONENTS ---
 
 class ParallaxSky extends PositionComponent with HasGameReference<ToiletJumpFlameGame> {
+  // El gradiente del cielo cambia de forma continua con la altura: se recrea
+  // el shader solo cada 40 px de ascenso (bucket) en coordenadas locales y se
+  // traslada con la cámara, en vez de crear un ui.Gradient nuevo por frame.
+  ui.Shader? _skyShader;
+  int _shaderBucket = 1 << 30;
+
+  // Tiempo acumulado con dt para el parpadeo de estrellas (pausa-safe)
+  double _twinkleTime = 0;
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _twinkleTime += dt;
+  }
+
   @override
   void render(Canvas canvas) {
     final camY = game.cameraComponent.viewfinder.position.y;
     final heightClimbed = -camY;
-    
-    Color skyTop;
-    Color skyBottom;
-    
-    if (heightClimbed < 2000) {
-      final t = (heightClimbed / 2000.0).clamp(0.0, 1.0);
-      skyTop = Color.lerp(const Color(0xFF1E2836), const Color(0xFF0D1017), t)!;
-      skyBottom = Color.lerp(const Color(0xFFE28A3B), const Color(0xFF1A1B24), t)!;
-    } else if (heightClimbed < 5000) {
-      final t = ((heightClimbed - 2000.0) / 3000.0).clamp(0.0, 1.0);
-      skyTop = Color.lerp(const Color(0xFF0D1017), const Color(0xFF020202), t)!;
-      skyBottom = Color.lerp(const Color(0xFF1A1B24), const Color(0xFF050505), t)!;
-    } else {
-      skyTop = const Color(0xFF010101);
-      skyBottom = const Color(0xFF030303);
+    final rectWidth = game.size.x + 500;
+    final rectHeight = game.size.y + 500;
+
+    final bucket = (heightClimbed / 40.0).floor();
+    if (_skyShader == null || bucket != _shaderBucket) {
+      _shaderBucket = bucket;
+
+      Color skyTop;
+      Color skyBottom;
+
+      if (heightClimbed < 2000) {
+        final t = (heightClimbed / 2000.0).clamp(0.0, 1.0);
+        skyTop = Color.lerp(const Color(0xFF1E2836), const Color(0xFF0D1017), t)!;
+        skyBottom = Color.lerp(const Color(0xFFE28A3B), const Color(0xFF1A1B24), t)!;
+      } else if (heightClimbed < 5000) {
+        final t = ((heightClimbed - 2000.0) / 3000.0).clamp(0.0, 1.0);
+        skyTop = Color.lerp(const Color(0xFF0D1017), const Color(0xFF020202), t)!;
+        skyBottom = Color.lerp(const Color(0xFF1A1B24), const Color(0xFF050505), t)!;
+      } else {
+        skyTop = const Color(0xFF010101);
+        skyBottom = const Color(0xFF030303);
+      }
+
+      _skyShader = ui.Gradient.linear(
+        Offset(0, -rectHeight / 2),
+        Offset(0, rectHeight / 2),
+        [skyTop, skyBottom],
+      );
     }
-    
-    // Draw sky based on viewport bounds
-    final rect = Rect.fromCenter(
-      center: Offset(game.size.x / 2, camY),
-      width: game.size.x + 500,
-      height: game.size.y + 500,
+
+    // Draw sky based on viewport bounds (shader en coordenadas locales)
+    canvas.save();
+    canvas.translate(game.size.x / 2, camY);
+    canvas.drawRect(
+      Rect.fromCenter(center: Offset.zero, width: rectWidth, height: rectHeight),
+      Paint()..shader = _skyShader,
     );
-    
-    final skyPaint = Paint()..shader = ui.Gradient.linear(rect.topCenter, rect.bottomCenter, [skyTop, skyBottom]);
-    canvas.drawRect(rect, skyPaint);
+    canvas.restore();
 
     // Draw stars
     final starsRand = Random(42);
@@ -272,7 +297,7 @@ class ParallaxSky extends PositionComponent with HasGameReference<ToiletJumpFlam
       double sx = (starsRand.nextDouble() * game.size.x * 3) - game.size.x;
       double sy = camY - game.size.y / 2 + (starsRand.nextDouble() * game.size.y);
       double size = 0.5 + starsRand.nextDouble() * 1.5;
-      double opacity = 0.3 + 0.7 * sin(DateTime.now().millisecondsSinceEpoch * 0.003 + i).abs();
+      double opacity = 0.3 + 0.7 * sin(_twinkleTime * 3.0 + i).abs();
       canvas.drawCircle(Offset(sx, sy), size, Paint()..color = Colors.white.withAlpha((opacity * 255).toInt()));
     }
   }
@@ -312,7 +337,8 @@ class JumpingPoop extends PositionComponent with HasGameReference<ToiletJumpFlam
 
   @override
   Future<void> onLoad() async {
-    cachedPoopImage = await SpriteRasterizer.rasterize(32, 32, (canvas) {
+    // Textura compartida por skin entre partidas; se libera al salir del modo
+    cachedPoopImage = await SpriteCache.getOrCreate('jump_player|$skin', 32, 32, (canvas) {
       PoopSkinDrawer.drawPoop(canvas, const Offset(16, 16), 30.0, skin: skin);
     });
   }
@@ -637,29 +663,3 @@ class BacteriaEnemy extends PositionComponent with HasGameReference<ToiletJumpFl
   }
 }
 
-class FloatingTextComponent extends PositionComponent {
-  final String text;
-  final Color color;
-  final double fontSize;
-  double life = 1.0;
-
-  FloatingTextComponent({required this.text, required this.color, required this.fontSize});
-
-  @override
-  void update(double dt) {
-    super.update(dt);
-    life -= dt;
-    position.y -= dt * 50;
-    if (life <= 0) removeFromParent();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final textPainter = TextPainter(
-      text: TextSpan(text: text, style: TextStyle(color: color.withAlpha((life.clamp(0.0, 1.0) * 255).toInt()), fontSize: fontSize, fontWeight: FontWeight.w900)),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
-  }
-}

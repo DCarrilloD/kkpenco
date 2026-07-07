@@ -1,14 +1,151 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'dart:ui' as ui;
+import 'package:flame/components.dart';
 import 'package:flame_audio/flame_audio.dart';
 import '../juanito_mode_screen.dart';
 
+/// SFX de los minijuegos sobre AudioPools reutilizables: FlameAudio.play
+/// instancia y desecha un AudioPlayer nativo por llamada, y a 3-7 efectos/s
+/// (disparos, monedas, saltos) eso produce churn de GC y microparones en
+/// Android. Los pools se crean una vez al precargar el Modo Juanito ([init]).
 class GameAudio {
+  static final Map<String, AudioPool> _pools = {};
+  static Future<void>? _initFuture;
+
+  static Future<void> init() {
+    return _initFuture ??= _createPools();
+  }
+
+  static Future<void> _createPools() async {
+    // maxPlayers según cadencia máxima de cada efecto en partida
+    const maxPlayersPerSfx = {
+      'shoot.wav': 3,
+      'explosion.wav': 2,
+      'hit.wav': 2,
+      'coin.wav': 3,
+      'jump.wav': 3,
+    };
+    for (final entry in maxPlayersPerSfx.entries) {
+      try {
+        _pools[entry.key] = await FlameAudio.createPool(entry.key, maxPlayers: entry.value);
+      } catch (e) {
+        // Sin pool, play() cae al FlameAudio.play de siempre; no es crítico.
+        debugPrint('Error creando AudioPool de ${entry.key}: $e');
+      }
+    }
+  }
+
   static void play(String file, {double volume = 1.0}) {
     if (JuanitoModeScreen.isMuted) return;
     // Si queremos reducir el volumen de Poop Invaders de forma nativa:
     final double volMultiplier = (file == 'shoot.wav' || file == 'explosion.wav') ? 0.35 : 1.0;
-    FlameAudio.play(file, volume: volume * volMultiplier);
+    final pool = _pools[file];
+    if (pool != null) {
+      pool.start(volume: volume * volMultiplier);
+    } else {
+      FlameAudio.play(file, volume: volume * volMultiplier);
+    }
+  }
+}
+
+/// Texto flotante de feedback («+10», «¡NIVEL 2!»…) compartido por los cuatro
+/// minijuegos. El texto es inmutable: se rasteriza UNA vez en onLoad y el
+/// desvanecido se aplica con el alpha del Paint al dibujar la textura.
+/// Re-layoutear el TextPainter cada frame solo para cambiar el alpha era caro
+/// (shaping de texto con emoji) y además inútil: los glifos emoji de color
+/// ignoran el fill de TextStyle, así que el fade ni siquiera se veía.
+/// [wobble] añade la rotación aleatoria y el «pop» de escala de Poop Invaders.
+class FloatingTextComponent extends PositionComponent {
+  final String text;
+  final Color color;
+  final double fontSize;
+  final bool wobble;
+
+  double life = 1.0;
+  double _targetAngle = 0.0;
+  ui.Image? _image;
+
+  // Margen para que la sombra del texto no quede recortada al rasterizar
+  static const double _pad = 8.0;
+  static const double _rasterScale = 2.0;
+
+  FloatingTextComponent({
+    required this.text,
+    required this.color,
+    required this.fontSize,
+    this.wobble = false,
+  }) {
+    anchor = Anchor.center;
+    if (wobble) {
+      _targetAngle = (Random().nextDouble() - 0.5) * 0.3;
+      angle = _targetAngle;
+    }
+  }
+
+  @override
+  void onLoad() {
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w900,
+          shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1))],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final width = (textPainter.width + _pad * 2) * _rasterScale;
+    final height = (textPainter.height + _pad * 2) * _rasterScale;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, Rect.fromLTWH(0, 0, width, height));
+    canvas.scale(_rasterScale);
+    textPainter.paint(canvas, const Offset(_pad, _pad));
+    final picture = recorder.endRecording();
+    _image = picture.toImageSync(max(1, width.ceil()), max(1, height.ceil()));
+    picture.dispose();
+  }
+
+  @override
+  void onRemove() {
+    // Textura por instancia (el texto varía): sí se libera al desaparecer
+    _image?.dispose();
+    _image = null;
+    super.onRemove();
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    life -= dt;
+    position.y -= dt * 50;
+
+    if (wobble) {
+      angle = ui.lerpDouble(angle, _targetAngle, dt * 5.0) ?? angle;
+      final scaleVal = life > 0.8 ? 1.0 + (life - 0.8) * 1.8 : 1.0;
+      scale = Vector2.all(scaleVal);
+    }
+
+    if (life <= 0) removeFromParent();
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final img = _image;
+    if (img == null) return;
+    final width = img.width / _rasterScale;
+    final height = img.height / _rasterScale;
+    canvas.drawImageRect(
+      img,
+      Rect.fromLTWH(0, 0, img.width.toDouble(), img.height.toDouble()),
+      Rect.fromCenter(center: Offset.zero, width: width, height: height),
+      Paint()
+        ..color = Colors.white.withAlpha((life.clamp(0.0, 1.0) * 255).toInt())
+        ..filterQuality = FilterQuality.low,
+    );
   }
 }
 

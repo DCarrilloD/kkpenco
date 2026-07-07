@@ -6,8 +6,7 @@ import 'package:flame/game.dart';
 import 'package:flame/collisions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flame_audio/flame_audio.dart';
-import '../shared_game_components.dart' show GameAudio;
+import '../shared_game_components.dart' show GameAudio, FloatingTextComponent;
 import '../../../models/achievement.dart';
 import 'sprite_rasterizer.dart';
 
@@ -64,9 +63,7 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    
-    await FlameAudio.audioCache.loadAll(['coin.wav', 'hit.wav']);
-    
+
     // Configuración inicial
     lives = hasExtraLife ? 4 : 3;
     if (activeBuffCategory == AchievementCategory.games) lives++;
@@ -241,13 +238,33 @@ class CacaCatchFlameGame extends FlameGame with PanDetector, HasCollisionDetecti
 // --- COMPONENTES ---
 
 class BackgroundComponent extends PositionComponent with HasGameReference<CacaCatchFlameGame> {
+  // El fondo solo cambia con el nivel y el modo fiebre: se graba en un Picture
+  // y se regenera únicamente cuando cambia alguno de los dos, en vez de emitir
+  // el rect y ~40 drawLine con Paints nuevos en cada frame.
+  ui.Picture? _staticLayer;
+  int _builtLevel = -1;
+  bool _builtFever = false;
+
   @override
-  void render(Canvas canvas) {
+  void onRemove() {
+    _staticLayer?.dispose();
+    _staticLayer = null;
+    super.onRemove();
+  }
+
+  void _rebuildStaticLayer() {
+    _staticLayer?.dispose();
+    _builtLevel = game.level;
+    _builtFever = game.isFeverMode;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
     Color bgColor = const Color(0xFF0D0D0D); // Negro
     if (game.level == 2) bgColor = const Color(0xFF0F172A);
     if (game.level == 3) bgColor = const Color(0xFF1E1B4B);
     if (game.level >= 4) bgColor = const Color(0xFF450A0A);
-    
+
     canvas.drawRect(Rect.fromLTWH(0, 0, game.size.x, game.size.y), Paint()..color = bgColor);
 
     // Cuadrícula
@@ -260,6 +277,16 @@ class BackgroundComponent extends PositionComponent with HasGameReference<CacaCa
     for (double j = 0; j < game.size.y; j += 40) {
       canvas.drawLine(Offset(0, j), Offset(game.size.x, j), gridPaint);
     }
+
+    _staticLayer = recorder.endRecording();
+  }
+
+  @override
+  void render(Canvas canvas) {
+    if (_staticLayer == null || _builtLevel != game.level || _builtFever != game.isFeverMode) {
+      _rebuildStaticLayer();
+    }
+    canvas.drawPicture(_staticLayer!);
   }
 }
 
@@ -275,7 +302,8 @@ class ToiletPlayer extends PositionComponent with HasGameReference<CacaCatchFlam
 
   @override
   Future<void> onLoad() async {
-    cachedToiletImage = await SpriteRasterizer.rasterize(60, 60, (canvas) {
+    // Textura compartida entre partidas; se libera al salir del Modo Juanito
+    cachedToiletImage = await SpriteCache.getOrCreate('caca_toilet', 60, 60, (canvas) {
       _drawToiletStatic(canvas, const Offset(30, 30));
     });
   }
@@ -458,12 +486,8 @@ class FallingItem extends PositionComponent with HasGameReference<CacaCatchFlame
         canvas.drawCircle(center, 16, Paint()..color = Colors.amber.withAlpha(80)..maskFilter = const MaskFilter.blur(BlurStyle.solid, 8));
       }
 
-      final textPainter = TextPainter(
-        text: TextSpan(text: icon, style: const TextStyle(fontSize: 26)),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
-      textPainter.paint(canvas, Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2));
+      // Textura de emoji cacheada: nada de TextPainter por ítem y por frame
+      EmojiSprites.draw(canvas, icon, 26, center);
     }
   }
 
@@ -539,37 +563,3 @@ class FallingItem extends PositionComponent with HasGameReference<CacaCatchFlame
   }
 }
 
-class FloatingTextComponent extends PositionComponent {
-  final String text;
-  final Color color;
-  final double fontSize;
-  double life = 1.0;
-
-  FloatingTextComponent({required this.text, required this.color, required this.fontSize});
-
-  @override
-  void update(double dt) {
-    super.update(dt);
-    life -= dt;
-    position.y -= dt * 50; // Sube lentamente
-    if (life <= 0) removeFromParent();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: color.withAlpha((life.clamp(0.0, 1.0) * 255).toInt()),
-          fontSize: fontSize,
-          fontWeight: FontWeight.w900,
-          shadows: const [Shadow(color: Colors.black, blurRadius: 4, offset: Offset(1, 1))],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    );
-    textPainter.layout();
-    textPainter.paint(canvas, Offset(-textPainter.width / 2, -textPainter.height / 2));
-  }
-}
