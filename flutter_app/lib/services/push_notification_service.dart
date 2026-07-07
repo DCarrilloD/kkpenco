@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -70,6 +71,8 @@ class PushNotificationService {
     _initialized = true;
   }
 
+  StreamSubscription<String>? _tokenRefreshSub;
+
   /// Guarda el token FCM del dispositivo en el doc del usuario y se suscribe a
   /// sus renovaciones. Necesario para que las Cloud Functions sepan a dónde
   /// enviar los avisos. No hace nada en modo simulación.
@@ -80,11 +83,29 @@ class PushNotificationService {
       if (token != null) {
         await DatabaseService().saveFcmToken(uid, token);
       }
-      _firebaseMessaging.onTokenRefresh.listen((newToken) {
+      // Cancelar la suscripción anterior: sin esto, tras un cambio de cuenta
+      // una renovación de token se escribiría en el doc de AMBOS usuarios.
+      await _tokenRefreshSub?.cancel();
+      _tokenRefreshSub = _firebaseMessaging.onTokenRefresh.listen((newToken) {
         DatabaseService().saveFcmToken(uid, newToken);
       });
     } catch (e) {
       debugPrint('Error al registrar el token FCM: $e');
+    }
+  }
+
+  /// Al cerrar sesión (o borrar la cuenta): borra el token del doc del usuario
+  /// e invalida el token del dispositivo, para que el móvil deje de recibir
+  /// los avisos (incluido contenido del chat) de la cuenta antigua.
+  Future<void> unregisterDeviceForUser(String uid) async {
+    if (useMockData) return;
+    try {
+      await _tokenRefreshSub?.cancel();
+      _tokenRefreshSub = null;
+      await DatabaseService().clearFcmToken(uid);
+      await _firebaseMessaging.deleteToken();
+    } catch (e) {
+      debugPrint('Error al des-registrar el token FCM: $e');
     }
   }
 

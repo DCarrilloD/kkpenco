@@ -15,6 +15,10 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
   String _selectedRole = 'user';
   bool _isLoading = false;
 
+  // Cacheado en un campo: crearlo en build re-suscribía a Firestore en cada
+  // rebuild (cada setState del formulario)
+  late final Stream<List<Map<String, dynamic>>> _emailsStream = _dbService.getAuthorizedEmails();
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -143,7 +147,7 @@ class _AdminPanelScreenState extends State<AdminPanelScreen> {
                 ),
               ),
               _AuthorizedEmailsList(
-                emailsStream: _dbService.getAuthorizedEmails(),
+                emailsStream: _emailsStream,
                 onRevoke: _revokeEmail,
               ),
             ],

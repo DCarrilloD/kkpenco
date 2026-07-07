@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/auth_service.dart';
 import '../services/database_service.dart';
+import '../services/push_notification_service.dart';
 import '../models/event.dart';
 import 'stats_panel_screen.dart';
 import 'biometric_simulation_dialog.dart';
@@ -442,8 +443,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
 
     try {
-      final events = await _dbService.getAllEvents();
-      
+      final user = _authService.currentUser;
+      if (user == null) throw Exception("Usuario no autenticado");
+
+      // Backup PERSONAL: solo los eventos propios. Exportar el grupo entero
+      // hacía que restaurar te adjudicara las cacas de todos (getAllEvents
+      // queda solo para el CSV de admin).
+      final events = await _dbService.getUserEvents(user.uid);
+
       // Convertir eventos a mapas compatibles con JSON
       List<Map<String, dynamic>> list = events.map((e) => {
         'id': e.id,
@@ -521,16 +528,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final user = _authService.currentUser;
       if (user == null) throw Exception("Usuario no autenticado");
 
-      // 2. Parsear y validar
+      // 2. Parsear y validar. Los eventos de OTROS usuarios se descartan en
+      // vez de reasignarlos al uid propio: los backups antiguos eran grupales
+      // y restaurarlos te adjudicaba las cacas de todos.
       List<KKEvent> importedEvents = [];
+      int discardedForeign = 0;
       for (var m in decoded) {
         if (m is! Map<String, dynamic>) continue;
-        
-        // Mapear campos de forma segura
+
+        final originalUserId = m['userId'] as String?;
+        if (originalUserId != null && originalUserId != user.uid) {
+          discardedForeign++;
+          continue;
+        }
+
+        // Mapear campos de forma segura (el ID se regenera al importar)
         importedEvents.add(KKEvent(
-          id: m['id'] ?? '',
-          userId: user.uid, // Sobreescritura segura de userId
-          displayName: user.displayName, // Sobreescritura segura de username
+          id: '',
+          userId: user.uid,
+          displayName: user.displayName,
           timestamp: DateTime.tryParse(m['timestamp'] ?? '') ?? DateTime.now(),
           duration: m['duration'],
           consistency: Consistency.values.firstWhere(
@@ -555,6 +571,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // 3. Confirmación del usuario
       if (!mounted) return;
+
+      if (importedEvents.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(discardedForeign > 0
+                ? 'El backup solo contiene registros de otros usuarios; no hay nada tuyo que restaurar.'
+                : 'El backup no contiene registros válidos.'),
+            backgroundColor: Colors.orange[800],
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -562,7 +594,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: const Text('Confirmar Restauración', style: TextStyle(color: Colors.white)),
           content: Text(
-            'Se importarán ${importedEvents.length} registros. ADVERTENCIA: Esto reemplazará tu historial actual de cacas. ¿Deseas continuar?',
+            'Se importarán ${importedEvents.length} registros'
+            '${discardedForeign > 0 ? ' (se descartaron $discardedForeign de otros usuarios)' : ''}. '
+            'ADVERTENCIA: Esto reemplazará tu historial actual de cacas. ¿Deseas continuar?',
             style: const TextStyle(color: Colors.grey),
           ),
           actions: [
@@ -680,17 +714,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (!mounted) return;
 
-    final passwordCorrect = await showDialog<bool>(
-      context: context,
-      builder: (context) => const _StatsPasswordDialog(),
+    // Sin biometría se entra directamente: la contraseña fija que había aquí
+    // era un candado cosmético (el dato ya es legible por cualquier usuario
+    // autenticado) y dejaba una contraseña hardcodeada dentro del APK.
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const StatsPanelScreen()),
     );
-
-    if (passwordCorrect == true && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const StatsPanelScreen()),
-      );
-    }
   }
 
   @override
@@ -698,7 +728,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = _authService.currentUser;
     if (user == null) return const Center(child: CircularProgressIndicator());
 
-    final isAdmin = _isAdmin || user.email == 'd.carrillo.d@gmail.com' || user.displayName.toLowerCase() == 'admin';
+    // Solo el rol de Firestore decide: el gating por nombre visible permitía
+    // que cualquiera renombrado a "admin" viera el panel y el export global.
+    final isAdmin = _isAdmin;
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
@@ -788,6 +820,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _DangerZone(
               isLoading: _isLoading,
               onSignOut: () async {
+                // Primero dejar de recibir pushes de esta cuenta en el
+                // dispositivo (borra el fcmToken y cancela el listener)
+                await PushNotificationService().unregisterDeviceForUser(user.uid);
                 await _authService.signOut();
               },
               onDeleteAccount: _confirmDeleteAccount,
@@ -1424,9 +1459,18 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       final user = widget.authService.currentUser;
       if (user == null) throw Exception("Usuario no identificado");
 
-      await widget.authService.reauthenticate(password);
-      await widget.dbService.deleteAllUserData(user.uid);
-      await widget.authService.deleteAccount(password);
+      if (useMockData) {
+        await widget.authService.reauthenticate(password);
+        await widget.dbService.deleteAllUserData(user.uid);
+        await widget.authService.deleteAccount(password);
+      } else {
+        // Este dispositivo deja de ser destinatario de pushes
+        await PushNotificationService().unregisterDeviceForUser(user.uid);
+        // El borrado real (datos + Storage + Auth) lo hace la Cloud Function
+        // deleteMyAccount con el Admin SDK; el batch de cliente era imposible
+        // con las reglas de Firestore y fallaba siempre.
+        await widget.authService.deleteMyAccountRemote(password);
+      }
 
       if (mounted) {
         Navigator.pop(context, true);
@@ -1508,87 +1552,3 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   }
 }
 
-class _StatsPasswordDialog extends StatefulWidget {
-  const _StatsPasswordDialog();
-
-  @override
-  State<_StatsPasswordDialog> createState() => _StatsPasswordDialogState();
-}
-
-class _StatsPasswordDialogState extends State<_StatsPasswordDialog> {
-  final _passwordController = TextEditingController();
-  String? _localError;
-
-  @override
-  void dispose() {
-    _passwordController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Row(
-        children: [
-          Icon(Icons.lock_outline_rounded, color: Colors.amberAccent),
-          SizedBox(width: 8),
-          Text('Acceso Protegido', style: TextStyle(color: Colors.white)),
-        ],
-      ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Introduce la contraseña para acceder al panel de estadísticas avanzadas.',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _passwordController,
-            obscureText: true,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Contraseña',
-              hintStyle: TextStyle(color: Colors.grey[600]),
-              filled: true,
-              fillColor: const Color(0xFF000000),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
-            ),
-          ),
-          if (_localError != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _localError!,
-              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-            ),
-          ],
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancelar', style: TextStyle(color: Colors.grey)),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            if (_passwordController.text == 'kkpenco2026') {
-              Navigator.pop(context, true);
-            } else {
-              setState(() {
-                _localError = 'Contraseña incorrecta';
-              });
-            }
-          },
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.brown[600]),
-          child: const Text('Acceder', style: TextStyle(color: Colors.white)),
-        ),
-      ],
-    );
-  }
-}

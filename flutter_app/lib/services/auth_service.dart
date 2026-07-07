@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -229,10 +230,31 @@ class AuthService {
     // Actualizar email vía verificación: Firebase envía un correo de confirmación
     // al nuevo email y el cambio se aplica al pulsar el enlace.
     // (firebase_auth 6 eliminó el antiguo updateEmail directo; ya no hay fallback.)
+    // Firestore NO se toca aquí: el cambio solo es real cuando el usuario pulsa
+    // el enlace; la copia se reconcilia en syncEmailWithFirestore() al arrancar.
     await user.verifyBeforeUpdateEmail(newEmail);
+  }
 
-    // Actualizar también en firestore
-    await _db.collection('users').doc(user.uid).update({'email': newEmail.trim().toLowerCase()});
+  /// Reconcilia la copia del email en Firestore con el de Auth (fuente de
+  /// verdad). Se llama al arrancar con sesión: cubre el caso de un cambio de
+  /// email confirmado por enlace después de que la app se cerrara.
+  Future<void> syncEmailWithFirestore() async {
+    if (useMockData) return;
+    try {
+      final user = _auth.currentUser;
+      final authEmail = user?.email?.trim().toLowerCase();
+      if (user == null || authEmail == null) return;
+
+      final docRef = _db.collection('users').doc(user.uid);
+      final doc = await docRef.get();
+      if (doc.exists && doc.data()?['email'] != authEmail) {
+        await docRef.update({'email': authEmail});
+      }
+    } catch (e) {
+      // Reconciliación en segundo plano: sin conexión se reintentará en el
+      // próximo arranque.
+      debugPrint('Error sincronizando email con Firestore: $e');
+    }
   }
 
   Future<void> changePassword({
@@ -273,14 +295,15 @@ class AuthService {
     await user.reauthenticateWithCredential(cred);
   }
 
-  // Eliminar cuenta de Firebase Auth tras reautenticar
+  // Eliminar cuenta de Firebase Auth tras reautenticar (solo modo simulación;
+  // en producción el borrado completo lo hace deleteMyAccountRemote)
   Future<void> deleteAccount(String password) async {
     if (useMockData) {
       _mockCurrentUser = null;
       _mockUserStreamController.add(null);
       return;
     }
-    
+
     // 1. Reautenticar
     await reauthenticate(password);
 
@@ -289,6 +312,29 @@ class AuthService {
     if (user != null) {
       await user.delete();
     }
+  }
+
+  /// Autodestrucción real de la cuenta vía Cloud Function `deleteMyAccount`.
+  /// El borrado debe ser server-side (Admin SDK): las reglas de Firestore no
+  /// permiten al dueño borrar su doc de `users` ni sus eventos de más de 5
+  /// minutos, así que el antiguo batch de cliente fallaba siempre. La función
+  /// borra eventos + monthly_stats + doc de usuario + Storage y, al final, el
+  /// usuario de Auth. Aquí solo se reautentica, se llama y se cierra la
+  /// sesión local (el usuario ya no existe en el servidor).
+  Future<void> deleteMyAccountRemote(String password) async {
+    await reauthenticate(password);
+
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('deleteMyAccount')
+          .call();
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'No se pudo completar el borrado de la cuenta.');
+    }
+
+    // El usuario de Auth ya no existe en el servidor: cerrar la sesión local
+    // para que authStateChanges lleve de vuelta a la pantalla de login.
+    await _auth.signOut();
   }
 
   // Gestión de biometría

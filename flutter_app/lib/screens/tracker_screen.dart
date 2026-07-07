@@ -417,7 +417,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
       final durationSecs = _stopwatchSeconds > 0 ? _stopwatchSeconds : (_durationMinutes * 60).toInt();
 
       final newEvent = KKEvent(
-        id: 'mock_${DateTime.now().millisecondsSinceEpoch}', // ID temporal para simulación/local
+        id: '', // El ID real lo genera addEvent (Firestore o mock)
         userId: user.uid,
         displayName: user.displayName,
         timestamp: DateTime.now(),
@@ -436,8 +436,11 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
         longitude: _longitude,
       );
 
-      await _dbService.addEvent(newEvent);
-      
+      // addEvent devuelve el evento con su ID REAL: insertar ese en la lista
+      // local. Antes se insertaba uno con ID falso 'mock_...' y el botón de
+      // eliminar (primeros 5 minutos) apuntaba a un doc inexistente.
+      final savedEvent = await _dbService.addEvent(newEvent);
+
       // Haptic feedback impact when saving poop
       HapticFeedback.mediumImpact();
 
@@ -453,7 +456,7 @@ class _TrackerScreenState extends State<TrackerScreen> with WidgetsBindingObserv
         _latitude = null;
         _longitude = null;
         // Prepend new element to local paginated list
-        _eventsList.insert(0, newEvent);
+        _eventsList.insert(0, savedEvent);
       });
 
       if (mounted) {

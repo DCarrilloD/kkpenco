@@ -240,6 +240,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
     // Con sesión activa: pedir permiso de notificaciones y registrar el token
     // FCM del dispositivo para que las Cloud Functions puedan enviar avisos.
     _setupPushNotifications();
+    // Reconciliar el email de Firestore con el de Auth (un cambio de email se
+    // confirma por enlace, quizá con la app cerrada; changeEmail ya no escribe
+    // en Firestore por adelantado).
+    AuthService().syncEmailWithFirestore();
   }
 
   Future<void> _setupPushNotifications() async {

@@ -18,6 +18,13 @@ class _RankingScreenState extends State<RankingScreen> {
   final _authService = AuthService();
   bool _isActionLoading = false;
 
+  // Streams cacheados en campos: crearlos en build re-suscribía a Firestore y
+  // hacía parpadear el spinner en cada rebuild (mismo patrón que el typing
+  // stream del chat). `late` los inicializa en el primer acceso, ya montados.
+  late final Stream<List<Map<String, dynamic>>> _rankingStream = _dbService.getRanking();
+  late final Stream<List<Map<String, dynamic>>> _duelsStream =
+      _dbService.getActiveDuels(_authService.currentUser!.uid);
+
   @override
   Widget build(BuildContext context) {
     final currentUser = _authService.currentUser;
@@ -46,7 +53,7 @@ class _RankingScreenState extends State<RankingScreen> {
         children: [
           // Banner de Duelos Activos / Pendientes
           StreamBuilder<List<Map<String, dynamic>>>(
-            stream: _dbService.getActiveDuels(currentUser.uid),
+            stream: _duelsStream,
             builder: (context, snapshot) {
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
                 return const SizedBox.shrink();
@@ -62,10 +69,19 @@ class _RankingScreenState extends State<RankingScreen> {
                   itemBuilder: (context, index) {
                     final duel = duels[index];
                     final isPending = duel['status'] == 'pending';
+                    // Los terminados se muestran como resultado (48 h y fuera);
+                    // antes cualquier estado != pending salía "EN CURSO" para siempre
+                    final isFinished = duel['status'] == 'finished';
                     final isMeChallenged = duel['challengedId'] == currentUser.uid;
-                    final opponentName = duel['challengerId'] == currentUser.uid 
-                        ? duel['challengedName'] 
+                    final opponentName = duel['challengerId'] == currentUser.uid
+                        ? duel['challengedName']
                         : duel['challengerName'];
+                    final myCount = (duel['challengerId'] == currentUser.uid
+                        ? duel['challengerCount']
+                        : duel['challengedCount']) as int? ?? 0;
+                    final theirCount = (duel['challengerId'] == currentUser.uid
+                        ? duel['challengedCount']
+                        : duel['challengerCount']) as int? ?? 0;
 
                     return Card(
                       color: const Color(0xFF1A1510), // Marrón oscuro
@@ -86,15 +102,25 @@ class _RankingScreenState extends State<RankingScreen> {
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.compare_arrows_rounded, color: Colors.deepOrangeAccent, size: 14),
+                                    Icon(
+                                      isFinished ? Icons.emoji_events_rounded : Icons.compare_arrows_rounded,
+                                      color: isFinished ? Colors.amberAccent : Colors.deepOrangeAccent,
+                                      size: 14,
+                                    ),
                                     const SizedBox(width: 4),
                                     Text(
-                                      isPending ? 'DESAFÍO PENDIENTE' : 'DUELO EN CURSO ⚔️',
-                                      style: const TextStyle(color: Colors.deepOrangeAccent, fontSize: 9, fontWeight: FontWeight.bold),
+                                      isPending
+                                          ? 'DESAFÍO PENDIENTE'
+                                          : (isFinished ? 'DUELO FINALIZADO 🏁' : 'DUELO EN CURSO ⚔️'),
+                                      style: TextStyle(
+                                        color: isFinished ? Colors.amberAccent : Colors.deepOrangeAccent,
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ],
                                 ),
-                                if (!isPending) ...[
+                                if (!isPending && !isFinished) ...[
                                   Text(
                                     'Restante: ${_getDaysRemaining(duel['endDate'])}d',
                                     style: const TextStyle(color: Colors.grey, fontSize: 9),
@@ -138,14 +164,14 @@ class _RankingScreenState extends State<RankingScreen> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      'Tú: ${duel['challengerId'] == currentUser.uid ? duel['challengerCount'] : duel['challengedCount']} 💩',
+                                      'Tú: $myCount 💩',
                                       style: const TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold),
                                     ),
                                   ),
                                   const Text('vs', style: TextStyle(color: Colors.grey, fontSize: 11)),
                                   Expanded(
                                     child: Text(
-                                      ' $opponentName: ${duel['challengerId'] == currentUser.uid ? duel['challengedCount'] : duel['challengerCount']} 💩',
+                                      ' $opponentName: $theirCount 💩',
                                       style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold),
                                       textAlign: TextAlign.end,
                                       maxLines: 1,
@@ -154,15 +180,25 @@ class _RankingScreenState extends State<RankingScreen> {
                                   ),
                                 ],
                               ),
-                              const ClipRRect(
-                                borderRadius: BorderRadius.all(Radius.circular(4)),
-                                child: LinearProgressIndicator(
-                                  value: 0.5, // Marcador neutral para representar competencia
-                                  color: Colors.deepOrangeAccent,
-                                  backgroundColor: Colors.grey,
-                                  minHeight: 4,
-                                ),
-                              )
+                              if (isFinished)
+                                Text(
+                                  myCount > theirCount
+                                      ? '¡Ganaste! 🏆'
+                                      : (myCount < theirCount ? 'Ganó $opponentName' : 'Empate 🤝'),
+                                  style: const TextStyle(color: Colors.amberAccent, fontSize: 10, fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )
+                              else
+                                const ClipRRect(
+                                  borderRadius: BorderRadius.all(Radius.circular(4)),
+                                  child: LinearProgressIndicator(
+                                    value: 0.5, // Marcador neutral para representar competencia
+                                    color: Colors.deepOrangeAccent,
+                                    backgroundColor: Colors.grey,
+                                    minHeight: 4,
+                                  ),
+                                )
                             ]
                           ],
                         ),
@@ -177,7 +213,7 @@ class _RankingScreenState extends State<RankingScreen> {
           // Tabla del Leaderboard
           Expanded(
             child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _dbService.getRanking(),
+              stream: _rankingStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

@@ -11,6 +11,7 @@ const {
   onDocumentCreated,
   onDocumentUpdated,
 } = require("firebase-functions/v2/firestore");
+const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { logger } = require("firebase-functions");
 const admin = require("firebase-admin");
 
@@ -167,6 +168,72 @@ exports.onDuelUpdated = onDocumentUpdated("duels/{duelId}", async (event) => {
       body: result,
       data: { type: "duel", duelId: event.params.duelId },
     });
+  }
+});
+
+// 5) Autodestrucción de cuenta. Debe ser server-side: las reglas de Firestore
+// no permiten al dueño borrar su propio doc de `users` ni sus eventos de más
+// de 5 minutos, así que el borrado desde el cliente fallaba SIEMPRE. Con el
+// Admin SDK las reglas no aplican. El cliente reautentica antes de llamar.
+// Orden: datos primero, usuario de Auth al final — si algo falla a medias, la
+// cuenta sigue existiendo y se puede reintentar sin dejar huérfanos sin dueño.
+exports.deleteMyAccount = onCall(async (request) => {
+  const uid = request.auth && request.auth.uid;
+  if (!uid) {
+    throw new HttpsError(
+      "unauthenticated",
+      "Debes iniciar sesión para eliminar tu cuenta."
+    );
+  }
+
+  try {
+    // 1. Referencias a borrar: eventos del usuario + monthly_stats + su doc
+    const eventsSnap = await db
+      .collection("events")
+      .where("userId", "==", uid)
+      .get();
+    const statsSnap = await db
+      .collection("users")
+      .doc(uid)
+      .collection("monthly_stats")
+      .get();
+
+    const refs = [
+      ...eventsSnap.docs.map((d) => d.ref),
+      ...statsSnap.docs.map((d) => d.ref),
+      db.collection("users").doc(uid),
+    ];
+
+    // 2. Borrado en lotes de 500 (límite de un batch de Firestore)
+    for (let i = 0; i < refs.length; i += 500) {
+      const batch = db.batch();
+      refs.slice(i, i + 500).forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    // 3. Storage: avatar y fotos subidas al chat. No bloquea el borrado si
+    // falla (p. ej. sin archivos): los datos personales clave ya no existen.
+    const bucket = admin.storage().bucket();
+    await Promise.all([
+      bucket
+        .deleteFiles({ prefix: `avatars/${uid}` })
+        .catch((e) => logger.warn("Storage avatars", { uid, e: e.message })),
+      bucket
+        .deleteFiles({ prefix: `chat_images/${uid}/` })
+        .catch((e) => logger.warn("Storage chat", { uid, e: e.message })),
+    ]);
+
+    // 4. Usuario de Auth, al final de todo
+    await admin.auth().deleteUser(uid);
+
+    logger.info("Cuenta eliminada", { uid, events: eventsSnap.size });
+    return { deletedEvents: eventsSnap.size };
+  } catch (e) {
+    logger.error("Fallo al eliminar la cuenta", { uid, error: e.message });
+    throw new HttpsError(
+      "internal",
+      "No se pudo completar el borrado. Inténtalo de nuevo."
+    );
   }
 });
 

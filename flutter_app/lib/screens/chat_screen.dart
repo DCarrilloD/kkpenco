@@ -31,6 +31,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   late final Stream<Map<String, String>> _typingStream;
 
+  // Cacheado en un campo como el typing stream: crearlo en build re-suscribía
+  // a Firestore y hacía parpadear el spinner con cada rebuild (p. ej. teclado)
+  late final Stream<List<ChatMessage>> _messagesStream = _dbService.getChatMessages();
+
   // Auto-scroll: recordar el último mensaje visto para distinguir un mensaje
   // nuevo (baja al final) de una reacción o edición (no mueve el scroll).
   String? _lastMessageId;
@@ -319,7 +323,7 @@ class _ChatScreenState extends State<ChatScreen> {
           // Stream de mensajes
           Expanded(
             child: StreamBuilder<List<ChatMessage>>(
-              stream: _dbService.getChatMessages(),
+              stream: _messagesStream,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());

@@ -243,11 +243,14 @@ class DatabaseService {
   // --- EVENTOS (TRACKER) ---
 
   // Agregar evento e incrementar contador del usuario en una transacción.
+  // Devuelve el evento PERSISTIDO, con su ID real: la UI debe insertar ese en
+  // su lista local (el que recibe puede traer un ID temporal que no coincide
+  // con el doc, y borrar por ese ID fantasma fallaba siempre).
   // [waitForServerAck]: con la persistencia offline activada, el commit no
   // resuelve hasta el ack del servidor; la UI usa escritura optimista (false),
   // pero el widget de escritorio debe esperar o su isolate de background
   // moriría con la escritura solo en la cola local.
-  Future<void> addEvent(KKEvent event, {bool waitForServerAck = false}) async {
+  Future<KKEvent> addEvent(KKEvent event, {bool waitForServerAck = false}) async {
     if (useMockData) {
       // Agregar al mock local
       final newMockEvent = KKEvent(
@@ -309,10 +312,27 @@ class DatabaseService {
       await _updateActiveDuelsCount(event.userId);
       await _checkAndUnlockAchievements(event);
       _saveMockData();
-      return;
+      return newMockEvent;
     }
 
+    // El ID se genera ANTES del batch para poder devolver el evento con su ID
+    // real (la regla de borrado de 5 minutos depende de que la UI lo tenga).
     final eventRef = _eventsRef.doc();
+    final persistedEvent = KKEvent(
+      id: eventRef.id,
+      userId: event.userId,
+      displayName: event.displayName,
+      timestamp: event.timestamp,
+      duration: event.duration,
+      consistency: event.consistency,
+      color: event.color,
+      location: event.location,
+      difficulty: event.difficulty,
+      estimatedWeight: event.estimatedWeight,
+      notes: event.notes,
+      latitude: event.latitude,
+      longitude: event.longitude,
+    );
     final userRef = _db.collection('users').doc(event.userId);
 
     final monthStr = "${event.timestamp.year}-${event.timestamp.month.toString().padLeft(2, '0')}";
@@ -362,8 +382,8 @@ class DatabaseService {
 
     final batch = _db.batch();
 
-    // Registrar el evento con ID autogenerado
-    batch.set(eventRef, event);
+    // Registrar el evento con el ID ya generado
+    batch.set(eventRef, persistedEvent);
 
     // Contador de por vida, rachas, Kakadólares, contadores de logros y los
     // logros recién desbloqueados, todo en la misma escritura atómica.
@@ -418,6 +438,7 @@ class DatabaseService {
         debugPrint('Error en la lógica secundaria de addEvent: $e');
       }));
     }
+    return persistedEvent;
   }
 
   // Verificar si un usuario tiene el rol admin en Firestore o en la sesión simulada
@@ -524,7 +545,11 @@ class DatabaseService {
   Stream<List<KKEvent>> getEvents(String userId) {
     if (useMockData) {
       Future.microtask(() => _eventsStreamController.add(List.from(_mockEvents)));
-      return _eventsStreamController.stream;
+      // Mismo filtro por usuario que la query real, para que Windows/mock no
+      // muestre el historial de todo el grupo.
+      return _eventsStreamController.stream.map(
+        (events) => events.where((e) => e.userId == userId).toList(),
+      );
     }
     return _eventsRef
         .where('userId', isEqualTo: userId)
@@ -534,8 +559,9 @@ class DatabaseService {
             snapshot.docs.map((doc) => doc.data()).toList());
   }
 
-  // Obtener todos los eventos (para exportación CSV de admin o backup).
-  // Usa [limit] en pantallas de visualización para acotar lecturas; déjalo nulo en exportaciones/backups.
+  // Obtener todos los eventos del grupo (SOLO para la exportación CSV de
+  // admin y estadísticas). El backup personal usa getUserEvents.
+  // Usa [limit] en pantallas de visualización para acotar lecturas; déjalo nulo en exportaciones.
   Future<List<KKEvent>> getAllEvents({int? limit}) async {
     if (useMockData) {
       return List.from(limit != null ? _mockEvents.take(limit) : _mockEvents);
@@ -548,22 +574,37 @@ class DatabaseService {
     return snapshot.docs.map((doc) => doc.data()).toList();
   }
 
+  // Eventos de UN usuario (para el backup personal: exportar los del grupo
+  // entero y reasignarlos al restaurar corrompía los datos).
+  Future<List<KKEvent>> getUserEvents(String userId) async {
+    if (useMockData) {
+      return _mockEvents.where((e) => e.userId == userId).toList();
+    }
+    final snapshot = await _eventsRef
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .get();
+    return snapshot.docs.map((doc) => doc.data()).toList();
+  }
+
   // --- PAGINACIÓN ---
   Future<PagedEventsResult> getEventsPaged(String userId, {int limit = 20, Object? cursor}) async {
     if (useMockData) {
+      // Igual que la query real: solo los eventos del usuario
+      final userEvents = _mockEvents.where((e) => e.userId == userId).toList();
       int startIndex = 0;
       if (cursor != null && cursor is String) {
-        final idx = _mockEvents.indexWhere((e) => e.id == cursor);
+        final idx = userEvents.indexWhere((e) => e.id == cursor);
         if (idx != -1) {
           startIndex = idx + 1;
         }
       }
-      if (startIndex >= _mockEvents.length) {
+      if (startIndex >= userEvents.length) {
         return PagedEventsResult(events: [], cursor: null, hasMore: false);
       }
-      final endIndex = (startIndex + limit) > _mockEvents.length ? _mockEvents.length : (startIndex + limit);
-      final events = _mockEvents.sublist(startIndex, endIndex);
-      final hasMore = endIndex < _mockEvents.length;
+      final endIndex = (startIndex + limit) > userEvents.length ? userEvents.length : (startIndex + limit);
+      final events = userEvents.sublist(startIndex, endIndex);
+      final hasMore = endIndex < userEvents.length;
       final nextCursor = events.isNotEmpty ? events.last.id : null;
 
       return PagedEventsResult(events: events, cursor: nextCursor, hasMore: hasMore);
@@ -609,6 +650,12 @@ class DatabaseService {
                 'lastPoop': data['lastPoop'] != null
                     ? (data['lastPoop'] as Timestamp).toDate()
                     : null,
+                // La UI del ranking también pinta racha, título y nudge; sin
+                // estos campos solo aparecían en mock (por eso no se notaba).
+                'currentStreak': data['currentStreak'] ?? 0,
+                'maxStreak': data['maxStreak'] ?? 0,
+                'equippedTitle': data['equippedTitle'],
+                'photoURL': data['photoURL'],
               };
             }).toList());
   }
@@ -619,7 +666,9 @@ class DatabaseService {
   Stream<List<ChatMessage>> getChatMessages({int limit = 50}) {
     if (useMockData) {
       Future.microtask(() => _chatStreamController.add(List.from(_mockChatMessages)));
-      return _chatStreamController.stream;
+      // Respetar el limit como la query real: los últimos N en orden cronológico
+      return _chatStreamController.stream.map((messages) =>
+          messages.length <= limit ? messages : messages.sublist(messages.length - limit));
     }
     return _chatRef
         .orderBy('timestamp', descending: true)
@@ -1099,6 +1148,20 @@ class DatabaseService {
     }, SetOptions(merge: true));
   }
 
+  // Borra el token FCM del doc del usuario (al cerrar sesión): sin esto el
+  // dispositivo seguiría recibiendo los avisos de la cuenta antigua.
+  Future<void> clearFcmToken(String userId) async {
+    if (useMockData) return;
+    try {
+      await _db.collection('users').doc(userId).update({
+        'fcmToken': FieldValue.delete(),
+      });
+    } catch (e) {
+      // El doc puede no existir (cuenta recién borrada): nada que limpiar.
+      debugPrint('Error al borrar el token FCM: $e');
+    }
+  }
+
   // Lee las preferencias de notificación, rellenando los que falten con los
   // defaults.
   Future<Map<String, bool>> getNotificationPrefs(String userId) async {
@@ -1237,48 +1300,80 @@ class DatabaseService {
       await userRef.set({
         'kcoins': FieldValue.increment(amount),
       }, SetOptions(merge: true));
-      
-      final doc = await userRef.get();
-      final newAmt = doc.data()?['kcoins'] as int? ?? 0;
-      if (newAmt >= 500) {
-        await unlockAchievement(userId, 'caca_capitalist', null);
+
+      // El logro solo puede desbloquearse con incrementos positivos, y una vez
+      // desbloqueado (o verificado en esta sesión) no hace falta releer el
+      // saldo tras cada increment: los minijuegos llaman esto muy a menudo.
+      if (amount > 0 && !_capitalistDone.contains(userId)) {
+        final doc = await userRef.get();
+        final data = doc.data();
+        final achievements = List<String>.from(data?['achievements'] ?? const []);
+        if (achievements.contains('caca_capitalist')) {
+          _capitalistDone.add(userId);
+        } else if ((data?['kcoins'] as int? ?? 0) >= 500) {
+          _capitalistDone.add(userId);
+          await unlockAchievement(userId, 'caca_capitalist', null);
+        }
       }
     } catch (e) {
       debugPrint('Error al agregar Kcoins: $e');
     }
   }
 
+  // Usuarios con 'caca_capitalist' ya desbloqueado en esta sesión (evita un
+  // get por cada addKcoins una vez conseguido el logro).
+  static final Set<String> _capitalistDone = {};
+
   Future<bool> buySkin(String userId, String skin, int cost) async {
     try {
-      final profile = await getUserZenProfile(userId);
-      final kcoins = (profile['kcoins'] as num?)?.toInt() ?? 0;
-      final unlocked = List<String>.from(profile['unlockedSkins']);
-      
-      if (kcoins < cost || unlocked.contains(skin)) {
-        return false;
-      }
-      
       if (useMockData) {
+        final profile = await getUserZenProfile(userId);
+        final kcoins = (profile['kcoins'] as num?)?.toInt() ?? 0;
+        final unlocked = List<String>.from(profile['unlockedSkins']);
+
+        if (kcoins < cost || unlocked.contains(skin)) {
+          return false;
+        }
+
         final prefs = await SharedPreferences.getInstance();
         await prefs.setInt('zen_kcoins_$userId', kcoins - cost);
         unlocked.add(skin);
         await prefs.setStringList('zen_unlocked_skins_$userId', unlocked);
-        
+
         if (unlocked.length >= 3) {
           await unlockAchievement(userId, 'fashion_poop', null);
         }
         return true;
       }
-      
+
+      // Saldo y skins se validan DENTRO de la transacción (mismo patrón que
+      // buyPowerupTransaction): validar con una lectura previa permitía que
+      // dos compras simultáneas dejaran el saldo en negativo.
       final userRef = _db.collection('users').doc(userId);
-      await _db.runTransaction((transaction) async {
+      int skinsAfterPurchase = 0;
+      final bought = await _db.runTransaction<bool>((transaction) async {
+        final snap = await transaction.get(userRef);
+        if (!snap.exists) return false;
+
+        final data = snap.data();
+        final currentCoins = data?['kcoins'] as int? ?? 0;
+        final unlocked = (data?['unlockedSkins'] is Iterable)
+            ? (data!['unlockedSkins'] as Iterable).map((e) => e.toString()).toList()
+            : <String>['💩'];
+
+        if (currentCoins < cost || unlocked.contains(skin)) return false;
+
         transaction.update(userRef, {
           'kcoins': FieldValue.increment(-cost),
           'unlockedSkins': FieldValue.arrayUnion([skin]),
         });
+        skinsAfterPurchase = unlocked.length + 1;
+        return true;
       });
-      
-      if (unlocked.length + 1 >= 3) {
+
+      if (!bought) return false;
+
+      if (skinsAfterPurchase >= 3) {
         await unlockAchievement(userId, 'fashion_poop', null);
       }
       return true;
@@ -1420,25 +1515,45 @@ class DatabaseService {
 
   // --- DUELOS 1v1 y NUDGES ---
 
-  // Obtener flujo de duelos en curso del usuario actual
+  // Un duelo terminado se sigue mostrando (como resultado) durante estas horas
+  // y después desaparece del banner.
+  static const int _finishedDuelVisibleHours = 48;
+
+  // ¿Debe aparecer el duelo en el banner? Pendientes y activos siempre; los
+  // terminados solo como tarjeta de resultado durante un tiempo limitado (los
+  // duelos 'finished' sin finishedAt son históricos y se ocultan).
+  static bool _isDuelVisible(Map<String, dynamic> duel) {
+    if (duel['status'] != 'finished') return true;
+    final finishedAt = duel['finishedAt'];
+    return finishedAt is DateTime &&
+        DateTime.now().difference(finishedAt).inHours < _finishedDuelVisibleHours;
+  }
+
+  // Obtener flujo de duelos del usuario actual (en curso + resultados recientes)
   Stream<List<Map<String, dynamic>>> getActiveDuels(String userId) {
     if (useMockData) {
       Future.microtask(() => _duelsStreamController.add(List.from(_mockDuels)));
-      return _duelsStreamController.stream;
+      return _duelsStreamController.stream.map(
+        (duels) => duels.where(_isDuelVisible).toList(),
+      );
     }
     return _db
         .collection('duels')
         .where('participants', arrayContains: userId)
         .snapshots()
-        .map((snap) => snap.docs.map((doc) {
+        .map((snap) => snap.docs
+            .map((doc) {
               final data = doc.data();
               return {
                 'id': doc.id,
                 ...data,
                 'startDate': (data['startDate'] as Timestamp?)?.toDate(),
                 'endDate': (data['endDate'] as Timestamp?)?.toDate(),
+                'finishedAt': (data['finishedAt'] as Timestamp?)?.toDate(),
               };
-            }).toList());
+            })
+            .where(_isDuelVisible)
+            .toList());
   }
 
   // Enviar un desafío de duelo 1v1
@@ -1582,25 +1697,49 @@ class DatabaseService {
     }
   }
 
+  // Regla de fin de duelo, IDÉNTICA en mock y Firebase: gana el primero en
+  // llegar a 5 puntos o, si nadie llega, el que vaya por delante al vencer
+  // endDate (antes mock terminaba a 5 y Firebase solo por fecha, y en
+  // producción un 5-0 seguía "en curso" durante días).
+  static const int duelTargetScore = 5;
+
   Future<void> _updateActiveDuelsCount(String userId) async {
     try {
       if (useMockData) {
+        final now = DateTime.now();
         for (var d in _mockDuels) {
           if (d['status'] == 'active' && d['participants'].contains(userId)) {
-            if (d['challengerId'] == userId) {
-              d['challengerCount'] = (d['challengerCount'] as int) + 1;
-            } else if (d['challengedId'] == userId) {
-              d['challengedCount'] = (d['challengedCount'] as int) + 1;
+            final endDate = d['endDate'];
+            final expired = endDate is DateTime && endDate.isBefore(now);
+
+            // El punto del evento actual solo cuenta si el duelo sigue vivo
+            if (!expired) {
+              if (d['challengerId'] == userId) {
+                d['challengerCount'] = (d['challengerCount'] as int) + 1;
+              } else if (d['challengedId'] == userId) {
+                d['challengedCount'] = (d['challengedCount'] as int) + 1;
+              }
             }
 
             final chCount = d['challengerCount'] as int;
             final cdCount = d['challengedCount'] as int;
-            if (chCount >= 5 || cdCount >= 5) {
+            if (expired || chCount >= duelTargetScore || cdCount >= duelTargetScore) {
               d['status'] = 'finished';
-              final winnerId = chCount > cdCount ? d['challengerId'] : d['challengedId'];
-              final winnerName = chCount > cdCount ? d['challengerName'] : d['challengedName'];
-              
-              await unlockAchievement(winnerId, 'duelist', winnerName);
+              d['finishedAt'] = DateTime.now();
+
+              String winnerName = 'Empate';
+              String? winnerId;
+              if (chCount > cdCount) {
+                winnerId = d['challengerId'];
+                winnerName = d['challengerName'];
+              } else if (cdCount > chCount) {
+                winnerId = d['challengedId'];
+                winnerName = d['challengedName'];
+              }
+
+              if (winnerId != null) {
+                await unlockAchievement(winnerId, 'duelist', winnerName);
+              }
 
               // Incrementar contador de duelos completados
               final prefs = await SharedPreferences.getInstance();
@@ -1640,11 +1779,28 @@ class DatabaseService {
       for (var doc in query.docs) {
         final data = doc.data();
         final endDate = (data['endDate'] as Timestamp?)?.toDate();
-        if (endDate != null && endDate.isBefore(now)) {
-          batch.update(doc.reference, {'status': 'finished'});
-          
-          final chCount = data['challengerCount'] as int? ?? 0;
-          final cdCount = data['challengedCount'] as int? ?? 0;
+        final expired = endDate != null && endDate.isBefore(now);
+
+        int chCount = data['challengerCount'] as int? ?? 0;
+        int cdCount = data['challengedCount'] as int? ?? 0;
+
+        // El punto del evento actual solo cuenta si el duelo sigue vivo
+        if (!expired) {
+          if (data['challengerId'] == userId) {
+            chCount++;
+          } else if (data['challengedId'] == userId) {
+            cdCount++;
+          }
+        }
+
+        if (expired || chCount >= duelTargetScore || cdCount >= duelTargetScore) {
+          batch.update(doc.reference, {
+            'status': 'finished',
+            'challengerCount': chCount,
+            'challengedCount': cdCount,
+            'finishedAt': Timestamp.now(),
+          });
+
           final chId = data['challengerId'] as String;
           final cdId = data['challengedId'] as String;
           final chName = data['challengerName'] as String;
@@ -1677,12 +1833,10 @@ class DatabaseService {
             timestamp: DateTime.now(),
             type: 'system',
           ));
-        } else {
-          if (data['challengerId'] == userId) {
-            batch.update(doc.reference, {'challengerCount': FieldValue.increment(1)});
-          } else if (data['challengedId'] == userId) {
-            batch.update(doc.reference, {'challengedCount': FieldValue.increment(1)});
-          }
+        } else if (data['challengerId'] == userId) {
+          batch.update(doc.reference, {'challengerCount': FieldValue.increment(1)});
+        } else if (data['challengedId'] == userId) {
+          batch.update(doc.reference, {'challengedCount': FieldValue.increment(1)});
         }
       }
       await batch.commit();
@@ -1999,76 +2153,59 @@ class DatabaseService {
     }
   }
 
+  // SOLO modo simulación. En producción el borrado completo lo hace la Cloud
+  // Function `deleteMyAccount` (vía AuthService.deleteMyAccountRemote): el
+  // antiguo batch de cliente era imposible con las reglas actuales (el dueño
+  // no puede borrar su doc de `users` ni eventos de más de 5 minutos, y
+  // tocaba colecciones sin reglas), así que fallaba SIEMPRE.
   Future<void> deleteAllUserData(String uid) async {
-    if (useMockData) {
-      // 1. Eliminar eventos de mock
-      _mockEvents.removeWhere((e) => e.userId == uid);
-      _eventsStreamController.add(List.from(_mockEvents));
-
-      // 2. Eliminar rankings de mock
-      _mockRankings.removeWhere((r) => r['uid'] == uid);
-      _rankingStreamController.add(List.from(_mockRankings));
-
-      // 3. Limpiar SharedPreferences locales del simulador
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('high_score_caca_catch');
-      await prefs.remove('high_score_flappy_poop');
-      await prefs.remove('high_score_toilet_jump');
-      await prefs.remove('high_score_poop_invaders');
-      await prefs.remove('mock_events');
-      await prefs.remove('mock_rankings');
-      await prefs.remove('zen_profile_$uid');
-      await prefs.remove('achievements_$uid');
-      await prefs.remove('zen_kcoins_$uid');
-      await prefs.remove('zen_equipped_skin_$uid');
-      await prefs.remove('zen_unlocked_skins_$uid');
-      await prefs.remove('unlocked_achievements_$uid');
-      await prefs.remove('equipped_title_$uid');
-      _saveMockData();
-      return;
+    if (!useMockData) {
+      throw UnsupportedError(
+        'En producción el borrado de cuenta se hace con la Cloud Function deleteMyAccount.',
+      );
     }
 
-    // En producción (Firestore):
-    final batch = _db.batch();
+    // 1. Eliminar eventos de mock
+    _mockEvents.removeWhere((e) => e.userId == uid);
+    _eventsStreamController.add(List.from(_mockEvents));
 
-    // 1. Obtener y eliminar todos los documentos en 'events' donde userId == uid
-    final eventsQuery = await _db.collection('events').where('userId', isEqualTo: uid).get();
-    for (var doc in eventsQuery.docs) {
-      batch.delete(doc.reference);
-    }
+    // 2. Eliminar rankings de mock
+    _mockRankings.removeWhere((r) => r['uid'] == uid);
+    _rankingStreamController.add(List.from(_mockRankings));
 
-    // 2. Obtener y eliminar todas las estadísticas mensuales del usuario
-    final monthlyStatsQuery = await _db
-        .collection('users')
-        .doc(uid)
-        .collection('monthly_stats')
-        .get();
-    for (var doc in monthlyStatsQuery.docs) {
-      batch.delete(doc.reference);
-    }
-
-    // 3. Eliminar documento principal del usuario
-    batch.delete(_db.collection('users').doc(uid));
-
-    // 4. Eliminar estadísticas de racha, zen_profiles, logros (si existieran colecciones raíz dedicadas)
-    batch.delete(_db.collection('streaks').doc(uid));
-    batch.delete(_db.collection('zen_profiles').doc(uid));
-    batch.delete(_db.collection('achievements').doc(uid));
-
-    await batch.commit();
+    // 3. Limpiar SharedPreferences locales del simulador
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('high_score_caca_catch');
+    await prefs.remove('high_score_flappy_poop');
+    await prefs.remove('high_score_toilet_jump');
+    await prefs.remove('high_score_poop_invaders');
+    await prefs.remove('mock_events');
+    await prefs.remove('mock_rankings');
+    await prefs.remove('zen_profile_$uid');
+    await prefs.remove('achievements_$uid');
+    await prefs.remove('zen_kcoins_$uid');
+    await prefs.remove('zen_equipped_skin_$uid');
+    await prefs.remove('zen_unlocked_skins_$uid');
+    await prefs.remove('unlocked_achievements_$uid');
+    await prefs.remove('equipped_title_$uid');
+    _saveMockData();
   }
 
+  // Restaura el historial PROPIO del usuario desde un backup. El llamador
+  // (perfil) ya descarta los eventos cuyo userId original no sea el propio;
+  // aquí además se generan SIEMPRE IDs nuevos: reutilizar los del JSON podía
+  // chocar con (y sobreescribir) documentos de otros usuarios.
   Future<void> importBackupEvents(String uid, String username, List<KKEvent> events) async {
     if (useMockData) {
       // 1. Eliminar eventos antiguos de mock del usuario
       _mockEvents.removeWhere((e) => e.userId == uid);
-      
+
       // 2. Insertar todos los nuevos eventos
       final rand = Random();
       for (var ev in events) {
-        // Sobreescribir userId y username por seguridad
+        // Sobreescribir id, userId y username por seguridad
         final securedEvent = KKEvent(
-          id: ev.id.isEmpty ? 'mock_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(10000)}' : ev.id,
+          id: 'mock_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(10000)}',
           userId: uid,
           displayName: username,
           timestamp: ev.timestamp,
@@ -2135,13 +2272,21 @@ class DatabaseService {
     }
 
     // En producción (Firestore):
+    // Helper: commit en lotes de máximo 500 operaciones (límite de Firestore;
+    // con historial largo un batch único revienta)
+    Future<void> deleteInChunks(List<DocumentReference> refs) async {
+      for (int i = 0; i < refs.length; i += 500) {
+        final batch = _db.batch();
+        for (final ref in refs.skip(i).take(500)) {
+          batch.delete(ref);
+        }
+        await batch.commit();
+      }
+    }
+
     // 1. Borrar eventos antiguos del usuario
     final eventsQuery = await _db.collection('events').where('userId', isEqualTo: uid).get();
-    final deleteBatch = _db.batch();
-    for (var doc in eventsQuery.docs) {
-      deleteBatch.delete(doc.reference);
-    }
-    await deleteBatch.commit();
+    await deleteInChunks(eventsQuery.docs.map((d) => d.reference).toList());
 
     // 2. Insertar los nuevos eventos en lotes de máximo 500 documentos por batch
     int index = 0;
@@ -2149,8 +2294,9 @@ class DatabaseService {
       final batch = _db.batch();
       final chunk = events.skip(index).take(500);
       for (var ev in chunk) {
+        // ID SIEMPRE nuevo: reutilizar el del JSON podía pisar docs ajenos
         final securedEvent = KKEvent(
-          id: ev.id.isEmpty ? _db.collection('events').doc().id : ev.id,
+          id: _db.collection('events').doc().id,
           userId: uid,
           displayName: username,
           timestamp: ev.timestamp,
@@ -2177,11 +2323,7 @@ class DatabaseService {
         .doc(uid)
         .collection('monthly_stats')
         .get();
-    final deleteMonthlyBatch = _db.batch();
-    for (var doc in monthlyStatsQuery.docs) {
-      deleteMonthlyBatch.delete(doc.reference);
-    }
-    await deleteMonthlyBatch.commit();
+    await deleteInChunks(monthlyStatsQuery.docs.map((d) => d.reference).toList());
 
     final Map<String, List<KKEvent>> groupedByMonth = {};
     for (var ev in events) {
@@ -2203,16 +2345,27 @@ class DatabaseService {
         'month': monthStr,
       }, SetOptions(merge: true));
     });
-    
-    // 4. Actualizar contador total de poopCount en users/{uid}
-    final userRef = _db.collection('users').doc(uid);
-    DateTime? lastPoopTime;
-    if (events.isNotEmpty) {
-      lastPoopTime = events.map((e) => e.timestamp).reduce((a, b) => a.isAfter(b) ? a : b);
+
+    // 4. Recalcular contadores del doc de usuario desde los eventos importados:
+    // poopCount/lastPoop, rachas y achStats (dejarlo desincronizado rompía la
+    // evaluación incremental de logros de addEvent).
+    final sortedByDate = List<KKEvent>.from(events)
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final rebuiltStats = AchievementStats();
+    for (final ev in sortedByDate) {
+      rebuiltStats.fold(ev);
     }
+
+    final newestFirst = sortedByDate.reversed.toList();
+    final streak = KKEvent.calculateStreak(newestFirst);
+
+    final userRef = _db.collection('users').doc(uid);
     statsBatch.update(userRef, {
       'poopCount': events.length,
-      if (lastPoopTime != null) 'lastPoop': Timestamp.fromDate(lastPoopTime),
+      if (newestFirst.isNotEmpty)
+        'lastPoop': Timestamp.fromDate(newestFirst.first.timestamp),
+      'achStats': rebuiltStats.toMap(),
+      'currentStreak': streak,
     });
 
     await statsBatch.commit();
