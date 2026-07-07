@@ -43,6 +43,22 @@
       },
       "oauth_client": [
         {
+          "client_id": "322337821489-nk3koo45eppruhuq3vafjnrnt09iuo84.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kkpenco.app",
+            "certificate_hash": "4e47879fd60448127e8af1c2cc61fdf96619bf1b"
+          }
+        },
+        {
+          "client_id": "322337821489-rqavmp9624cts36qmesnh4vb77gsotfl.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kkpenco.app",
+            "certificate_hash": "87d51d5f93eac151bfa7c8dc08bccd04d94340a2"
+          }
+        },
+        {
           "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
           "client_type": 3
         }

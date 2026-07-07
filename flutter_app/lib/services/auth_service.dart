@@ -154,6 +154,8 @@ class AuthService {
         return 'Credenciales inválidas. Verifica tu correo y contraseña.';
       case 'account-exists-with-different-credential':
         return 'Ya existe una cuenta con ese correo pero con otro método de acceso.';
+      case 'operation-not-allowed':
+        return 'Este método de acceso no está habilitado en Firebase (Authentication → Sign-in method).';
       default:
         return 'Ocurrió un error de autenticación. Código: $code';
     }
