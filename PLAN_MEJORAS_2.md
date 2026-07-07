@@ -190,7 +190,7 @@
 ---
 
 **Cierre de Fases 1–3 (2026-07-07)**: implementado todo salvo 2.3 (whitelist), que se decidió posponer. Notas:
-- **1.1**: nueva Cloud Function `deleteMyAccount` (onCall, en `functions/index.js`) que borra eventos+monthly_stats+doc de usuario en lotes de 500, Storage (avatar y `chat_images/{uid}`) y al final el usuario de Auth. Cliente: `AuthService.deleteMyAccountRemote` (reautentica → llama → signOut local); se añadió la dependencia `cloud_functions`. `deleteAllUserData` queda solo para mock. **Pendiente desplegar**: `firebase deploy --only functions` (y `npm install` en `functions/` si hace falta).
+- **1.1**: nueva Cloud Function `deleteMyAccount` (onCall, en `functions/index.js`) que borra eventos+monthly_stats+doc de usuario en lotes de 500, Storage (avatar y `chat_images/{uid}`) y al final el usuario de Auth. Cliente: `AuthService.deleteMyAccountRemote` (reautentica → llama → signOut local); se añadió la dependencia `cloud_functions`. `deleteAllUserData` queda solo para mock. **Desplegada el 2026-07-07** (`deleteMyAccount` callable v2, us-central1, junto con la actualización de las 4 funciones de push).
 - **1.2**: `addEvent` genera el ID antes del batch y devuelve el evento persistido; el tracker inserta ese. Test de regresión en `test/event_lifecycle_test.dart`.
 - **1.3**: backup personal exporta solo eventos propios (`getUserEvents`); el import descarta eventos ajenos (con aviso), genera SIEMPRE IDs nuevos, trocea los borrados a 500 y recalcula `achStats`/racha/poopCount desde lo importado.
 - **2.1**: `getRanking` mapea `currentStreak`/`maxStreak`/`equippedTitle`/`photoURL`.
