@@ -12,7 +12,7 @@
 
 ## Fase 1 — Bugs críticos: funcionalidad rota en producción
 
-### [ ] 1.1 "Autodestrucción de Cuenta" falla SIEMPRE en producción 🔴
+### [x] 1.1 "Autodestrucción de Cuenta" falla SIEMPRE en producción 🔴
 - **Dónde**: `flutter_app/lib/services/database_service.dart:2002` (`deleteAllUserData`), flujo en `profile_screen.dart:1428`.
 - **Problema**: el batch único de borrado es imposible de ejecutar con las reglas actuales:
   1. Borra docs de `streaks`, `zen_profiles` y `achievements` (`database_service.dart:2054-2056`), colecciones **sin reglas** → denegado por defecto → **el batch entero falla para todos, incluido el admin** (las reglas se evalúan aunque el doc no exista).
@@ -24,7 +24,7 @@
 - **Fix mínimo alternativo** (sin Functions): reglas que permitan al dueño borrar su doc de usuario y sus eventos sin límite de tiempo cuando se auto-elimina no son expresables de forma limpia → no recomendado; ir a la Function.
 - **Esfuerzo**: medio. **Test**: E2E manual en Android.
 
-### [ ] 1.2 No se puede borrar una KK recién registrada (ID fantasma) 🔴
+### [x] 1.2 No se puede borrar una KK recién registrada (ID fantasma) 🔴
 - **Dónde**: `tracker_screen.dart:420` (`id: 'mock_${...}'`), `:456` (se inserta ese objeto en `_eventsList`), `database_service.dart:315` (el ID real lo autogenera `_eventsRef.doc()`), `deleteEvent` en `database_service.dart:492`.
 - **Problema**: el evento que se muestra en el historial tras guardar lleva un ID local falso (`mock_...`) que nunca coincide con el doc real de Firestore. El botón de eliminar solo aparece en los primeros 5 minutos (`tracker_screen.dart:1313-1314`)… que es exactamente la ventana en la que el ID es falso:
   - **Firebase**: `deleteEvent` apunta a un doc inexistente → las reglas evalúan `resource.data` sobre null → permission-denied → error en pantalla. El evento real sigue existiendo.
@@ -32,7 +32,7 @@
 - **Fix**: que `addEvent` genere el ID antes del batch y lo **devuelva** (o devuelva el `KKEvent` persistido), y que `_saveEvent` inserte en `_eventsList` el evento con el ID real. En la rama mock, respetar el mismo ID devuelto.
 - **Esfuerzo**: pequeño. **Test**: unitario mock (guardar → borrar → evento fuera y contador correcto).
 
-### [ ] 1.3 Backup/restore puede corromper datos (y normalmente falla) 🔴
+### [x] 1.3 Backup/restore puede corromper datos (y normalmente falla) 🔴
 - **Dónde**: `profile_screen.dart:387,445` (`getAllEvents()` sin filtro), `_importFromJSON` (`profile_screen.dart:498`), `importBackupEvents` (`database_service.dart:2061`).
 - **Problemas encadenados**:
   1. El "backup personal" (visible para TODOS los usuarios) exporta **los eventos de todo el grupo**, no solo los propios.
@@ -50,13 +50,13 @@
 
 ## Fase 2 — Funcionalidad degradada en producción (mock sí, Firebase no)
 
-### [ ] 2.1 Ranking sin rachas, títulos ni botón de empujón 🟠
+### [x] 2.1 Ranking sin rachas, títulos ni botón de empujón 🟠
 - **Dónde**: `database_service.dart:598-613` (`getRanking`, rama Firebase) vs `ranking_screen.dart:255-256, 390-391`.
 - **Problema**: la rama Firebase solo mapea `uid/username/poopCount/lastPoop`, pero la UI lee `currentStreak` y `equippedTitle`. Con Firebase real las rachas 🔥, los títulos 👑 y el botón Nudge (requiere `streak > 0`) **no aparecen nunca**. En mock sí (por eso no se notó en Windows).
 - **Fix**: añadir `currentStreak`, `maxStreak`, `equippedTitle` (y de paso `photoURL` si se quiere avatar) al map de `getRanking`. Una línea por campo; los datos ya están en el doc de usuario.
 - **Esfuerzo**: trivial.
 
-### [ ] 2.2 Duelos: condición de fin distinta en mock y Firebase; los terminados se muestran "EN CURSO" para siempre 🟠
+### [x] 2.2 Duelos: condición de fin distinta en mock y Firebase; los terminados se muestran "EN CURSO" para siempre 🟠
 - **Dónde**: `database_service.dart:1585-1693` (`_updateActiveDuelsCount`), `ranking_screen.dart:64` (banner).
 - **Problemas**:
   1. **Mock**: el duelo termina al llegar alguien a 5 puntos. **Firebase**: solo termina cuando pasa `endDate` (7 días) y además alguien registra un evento después. Comportamientos incompatibles: en producción un 5-0 sigue "en curso" días.
@@ -71,7 +71,7 @@
 - **Fix recomendado**: **blocking function** de Firebase Auth (`beforeUserCreated`) que rechace registros cuyo email no esté en `authorized_emails` (ya hay plan Blaze y carpeta `functions/`). Alternativa sin Functions: regla de `users` create que exija `exists(/authorized_emails/$(email))` + reglas de datos que denieguen lectura a usuarios sin doc en `users`. Marcar `registered: true` al usarse. Si se decide dejarlo abierto conscientemente, retirar el panel de whitelist para no confundir.
 - **Esfuerzo**: medio.
 
-### [ ] 2.4 El dispositivo sigue recibiendo pushes de la cuenta cerrada 🟡 (privacidad)
+### [x] 2.4 El dispositivo sigue recibiendo pushes de la cuenta cerrada 🟡 (privacidad)
 - **Dónde**: `push_notification_service.dart:76-89` (`registerDeviceForUser`), `auth_service.dart:199` (`signOut` no limpia nada).
 - **Problemas**:
   1. Al cerrar sesión no se borra `fcmToken` del doc del usuario → el móvil sigue recibiendo los avisos (incluido contenido del chat) de la cuenta antigua.
@@ -83,35 +83,35 @@
 
 ## Fase 3 — Robustez, eficiencia y limpieza
 
-### [ ] 3.1 Streams creados dentro de `build` (re-suscripción en cada rebuild) 🟡
+### [x] 3.1 Streams creados dentro de `build` (re-suscripción en cada rebuild) 🟡
 - **Dónde**: `chat_screen.dart:322` (`getChatMessages()`), `ranking_screen.dart:49` (`getActiveDuels`) y `:180` (`getRanking`), `admin_panel_screen.dart:146` (`getAuthorizedEmails`).
 - **Problema**: cada rebuild (abrir/cerrar teclado en el chat, cualquier `setState`) crea un stream nuevo → el `StreamBuilder` pasa por `waiting` (parpadeo de spinner) y se re-listen a Firestore. El typing stream ya se cachea en un campo (fix 3.3 del plan anterior); aplicar el mismo patrón al resto.
 - **Fix**: inicializar los streams en `initState` y referenciarlos desde `build`.
 - **Esfuerzo**: trivial por pantalla.
 
-### [ ] 3.2 `changeEmail` desincroniza Firestore 🟡
+### [x] 3.2 `changeEmail` desincroniza Firestore 🟡
 - **Dónde**: `auth_service.dart:229-235`.
 - **Problema**: `verifyBeforeUpdateEmail` solo cambia el email cuando el usuario pulsa el enlace del correo, pero el doc de Firestore se actualiza inmediatamente → si nunca confirma, Auth y Firestore quedan con emails distintos.
 - **Fix**: no tocar Firestore ahí; sincronizar el email al detectar el cambio en Auth (p. ej. tras `user.reload()` en el arranque) o simplemente dejar de duplicar el email en Firestore.
 - **Esfuerzo**: pequeño.
 
-### [ ] 3.3 Economía de Kcoins: lecturas extra y carreras 🟡
+### [x] 3.3 Economía de Kcoins: lecturas extra y carreras 🟡
 - **Dónde**: `addKcoins` (`database_service.dart:1236-1245`: un `get` tras cada increment solo para el logro `caca_capitalist`), `buySkin` (`:1251-1289`: lee el perfil FUERA de la transacción y descuenta sin re-validar → dos compras simultáneas pueden dejar saldo negativo; `buyPowerupTransaction` sí lo hace bien).
 - **Fix**: en `buySkin`, validar saldo dentro de la transacción (copiar el patrón de `buyPowerupTransaction`); en `addKcoins`, evaluar el logro solo cuando el increment sea positivo y aprovechar lecturas ya hechas (o usar el `achStats` del batch de `addEvent`).
 - **Esfuerzo**: pequeño.
 
-### [ ] 3.4 Gating de admin por nombre visible 🟡
+### [x] 3.4 Gating de admin por nombre visible 🟡
 - **Dónde**: `profile_screen.dart:701`: `_isAdmin || email == 'd.carrillo.d@gmail.com' || displayName == 'admin'`.
 - **Problema**: cualquiera que se renombre a "admin" ve el panel de administración y el export CSV global (las escrituras las frenan las reglas, pero la lectura global de eventos está permitida a todo autenticado). Además hay un email hardcodeado.
 - **Fix**: dejar solo `_isAdmin` (rol de Firestore). El email hardcodeado sobra: el rol ya se asigna por consola.
 - **Esfuerzo**: trivial.
 
-### [ ] 3.5 Divergencias menores del modo mock 🟢
+### [x] 3.5 Divergencias menores del modo mock 🟢
 - `getEvents(userId)` mock no filtra por usuario (`database_service.dart:524-528`) → en Windows el historial muestra eventos de todos.
 - `getChatMessages` mock ignora `limit`.
 - **Esfuerzo**: trivial; solo afecta a desarrollo.
 
-### [ ] 3.6 Contraseña fija del panel de estadísticas 🟢
+### [x] 3.6 Contraseña fija del panel de estadísticas 🟢
 - **Dónde**: `profile_screen.dart:1580` (`'kkpenco2026'` en el APK).
 - **Nota**: es un candado cosmético (el dato ya es legible por cualquier usuario autenticado). Decidir si se quita el diálogo o se acepta como está; no invertir en "asegurarlo".
 
@@ -188,6 +188,21 @@
 - Verificado: `flutter analyze` limpio y 35/35 tests. Pendiente de validar FPS/batería en Android real.
 
 ---
+
+**Cierre de Fases 1–3 (2026-07-07)**: implementado todo salvo 2.3 (whitelist), que se decidió posponer. Notas:
+- **1.1**: nueva Cloud Function `deleteMyAccount` (onCall, en `functions/index.js`) que borra eventos+monthly_stats+doc de usuario en lotes de 500, Storage (avatar y `chat_images/{uid}`) y al final el usuario de Auth. Cliente: `AuthService.deleteMyAccountRemote` (reautentica → llama → signOut local); se añadió la dependencia `cloud_functions`. `deleteAllUserData` queda solo para mock. **Pendiente desplegar**: `firebase deploy --only functions` (y `npm install` en `functions/` si hace falta).
+- **1.2**: `addEvent` genera el ID antes del batch y devuelve el evento persistido; el tracker inserta ese. Test de regresión en `test/event_lifecycle_test.dart`.
+- **1.3**: backup personal exporta solo eventos propios (`getUserEvents`); el import descarta eventos ajenos (con aviso), genera SIEMPRE IDs nuevos, trocea los borrados a 500 y recalcula `achStats`/racha/poopCount desde lo importado.
+- **2.1**: `getRanking` mapea `currentStreak`/`maxStreak`/`equippedTitle`/`photoURL`.
+- **2.2**: regla única "primero a 5 (`duelTargetScore`) o fin de plazo" en ambas ramas; al finalizar se escribe `finishedAt` y el banner muestra la tarjeta de resultado 48 h (`_finishedDuelVisibleHours`) y luego la oculta; los `finished` históricos sin `finishedAt` se ocultan. Test en `event_lifecycle_test.dart`.
+- **2.4**: `unregisterDeviceForUser` (cancela `onTokenRefresh`, borra `fcmToken` con `FieldValue.delete()` y hace `deleteToken()`) llamado al cerrar sesión y al borrar cuenta; `registerDeviceForUser` cancela la suscripción anterior antes de re-suscribir.
+- **3.1**: streams de chat/ranking/duelos/whitelist cacheados como campos `late final`.
+- **3.2**: `changeEmail` ya no escribe en Firestore; `syncEmailWithFirestore()` reconcilia al arrancar (llamado desde `MainNavigationScreen.initState`).
+- **3.3**: `buySkin` valida saldo y skins dentro de la transacción; `addKcoins` solo relee el saldo con incrementos positivos y deja de leer cuando `caca_capitalist` ya está desbloqueado (caché de sesión).
+- **3.4**: el gating de admin del perfil usa solo `_isAdmin` (rol de Firestore); fuera el email hardcodeado y el `displayName == 'admin'`.
+- **3.5**: `getEvents` y `getEventsPaged` mock filtran por usuario; `getChatMessages` mock respeta `limit`.
+- **3.6**: se quitó el diálogo de contraseña fija (`kkpenco2026`) del panel de stats; con biometría activada se sigue pidiendo, sin ella se entra directo.
+- Verificado: `flutter analyze` limpio, 38/38 tests (3 nuevos). **Pendiente E2E en Android real** (sobre todo 1.1 tras desplegar la función, y 2.4 con dos cuentas).
 
 ## Pendientes heredados del plan anterior
 
