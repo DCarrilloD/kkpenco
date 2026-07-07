@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:io';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_user.dart';
@@ -151,8 +152,83 @@ class AuthService {
         return 'El formato del correo electrónico no es válido.';
       case 'invalid-credential':
         return 'Credenciales inválidas. Verifica tu correo y contraseña.';
+      case 'account-exists-with-different-credential':
+        return 'Ya existe una cuenta con ese correo pero con otro método de acceso.';
       default:
         return 'Ocurrió un error de autenticación. Código: $code';
+    }
+  }
+
+  // --- GOOGLE SIGN-IN (OAuth) ---
+
+  // initialize() de google_sign_in debe llamarse una sola vez por sesión de
+  // app; el Future compartido evita dobles inicializaciones. En Android el
+  // serverClientId sale del recurso default_web_client_id que genera el
+  // plugin de google-services desde google-services.json.
+  static Future<void>? _googleInitFuture;
+
+  Future<void> _ensureGoogleInitialized() {
+    return _googleInitFuture ??= GoogleSignIn.instance.initialize();
+  }
+
+  /// Inicia sesión con Google. Devuelve `false` si el usuario cerró el
+  /// selector de cuentas (no es un error); lanza [Exception] con mensaje
+  /// amable en los fallos reales.
+  Future<bool> signInWithGoogle() async {
+    if (useMockData) {
+      // El botón está oculto en mock (Windows no soporta google_sign_in);
+      // esto es solo un cinturón de seguridad.
+      throw Exception('Google Sign-In no está disponible en modo simulación.');
+    }
+
+    try {
+      await _ensureGoogleInitialized();
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) {
+        throw Exception('Google no devolvió una credencial válida. Inténtalo de nuevo.');
+      }
+
+      final userCredential = await _auth.signInWithCredential(
+        GoogleAuthProvider.credential(idToken: idToken),
+      );
+
+      // Con OAuth no se pasa por signUp: crear el doc de `users` la primera
+      // vez (las reglas permiten crear el propio doc con rol 'user').
+      await _ensureUserDocument(userCredential.user);
+      return true;
+    } on GoogleSignInException catch (e) {
+      if (e.code == GoogleSignInExceptionCode.canceled ||
+          e.code == GoogleSignInExceptionCode.interrupted) {
+        return false;
+      }
+      debugPrint('GoogleSignInException: ${e.code} ${e.description}');
+      throw Exception('No se pudo iniciar sesión con Google. Inténtalo de nuevo.');
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_translateAuthError(e.code));
+    }
+  }
+
+  // Crea el documento de usuario si no existe (primer acceso por OAuth).
+  Future<void> _ensureUserDocument(User? user) async {
+    if (user == null) return;
+    try {
+      final docRef = _db.collection('users').doc(user.uid);
+      final doc = await docRef.get();
+      if (doc.exists) return;
+
+      final fallbackName = user.email?.split('@').first ?? 'Sin Nombre';
+      await docRef.set({
+        'username': user.displayName ?? fallbackName,
+        'email': user.email?.trim().toLowerCase(),
+        'role': 'user',
+        if (user.photoURL != null) 'photoURL': user.photoURL,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // La sesión ya está iniciada; si esta escritura falla (p. ej. red), no
+      // se aborta el login. El email se reconcilia al arrancar de todos modos.
+      debugPrint('Error creando el documento de usuario: $e');
     }
   }
 
@@ -202,6 +278,15 @@ class AuthService {
       _mockCurrentUser = null;
       _mockUserStreamController.add(null);
       return;
+    }
+    // Si se entró con Google, cerrar también esa sesión: si no, el próximo
+    // login reutiliza la cuenta anterior sin mostrar el selector.
+    if (_googleInitFuture != null) {
+      try {
+        await GoogleSignIn.instance.signOut();
+      } catch (e) {
+        debugPrint('Error cerrando la sesión de Google: $e');
+      }
     }
     await _auth.signOut();
   }
