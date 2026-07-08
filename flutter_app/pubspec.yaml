@@ -3,7 +3,7 @@ description: A modern Flutter mobile application rewriting the Antigravity Flet 
 
 publish_to: 'none'
 
-version: 5.4.0+13
+version: 5.4.3+16
 
 environment:
   sdk: ">=3.0.0 <4.0.0"

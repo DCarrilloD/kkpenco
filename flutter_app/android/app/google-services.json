@@ -7,41 +7,20 @@
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:322337821489:android:a27fdc46aed9ad04f69610",
-        "android_client_info": {
-          "package_name": "com.example.kkpenco"
-        }
-      },
-      "oauth_client": [
-        {
-          "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyCrOZIEgRuiFB2xibesgYK_lWUrePedaEI"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "322337821489-p7c5j2co3u8jtqr1oenast5u399eg085.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
         "mobilesdk_app_id": "1:322337821489:android:b9bffe52e81db71ff69610",
         "android_client_info": {
           "package_name": "com.kkpenco.app"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "322337821489-7j7epdshgva68gc9cnl9k2u1e0amu63j.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kkpenco.app",
+            "certificate_hash": "38363f29f32d7c513bdf40f5774ecc39ba8397f5"
+          }
+        },
         {
           "client_id": "322337821489-nk3koo45eppruhuq3vafjnrnt09iuo84.apps.googleusercontent.com",
           "client_type": 1,

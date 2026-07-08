@@ -173,6 +173,13 @@ class AuthService {
     return _googleInitFuture ??= GoogleSignIn.instance.initialize();
   }
 
+  // En algunos dispositivos (ROMs custom con Credential Manager roto) el
+  // selector de cuentas nunca llega a mostrarse y authenticate() se queda
+  // pendiente para siempre. Pasado este plazo se salta al flujo web. Ojo:
+  // también corre mientras el usuario tiene el selector abierto sin decidirse,
+  // así que no debe ser demasiado corto.
+  static const _googleAuthenticateTimeout = Duration(seconds: 12);
+
   /// Inicia sesión con Google. Devuelve `false` si el usuario cerró el
   /// selector de cuentas (no es un error); lanza [Exception] con mensaje
   /// amable en los fallos reales.
@@ -185,7 +192,9 @@ class AuthService {
 
     try {
       await _ensureGoogleInitialized();
-      final account = await GoogleSignIn.instance.authenticate();
+      final account = await GoogleSignIn.instance
+          .authenticate()
+          .timeout(_googleAuthenticateTimeout);
       final idToken = account.authentication.idToken;
       if (idToken == null) {
         throw Exception('Google no devolvió una credencial válida. Inténtalo de nuevo.');
@@ -199,14 +208,37 @@ class AuthService {
       // vez (las reglas permiten crear el propio doc con rol 'user').
       await _ensureUserDocument(userCredential.user);
       return true;
+    } on TimeoutException {
+      debugPrint('authenticate() sin respuesta tras '
+          '${_googleAuthenticateTimeout.inSeconds}s; probando flujo web.');
+      return _signInWithGoogleViaBrowser();
     } on GoogleSignInException catch (e) {
       if (e.code == GoogleSignInExceptionCode.canceled ||
           e.code == GoogleSignInExceptionCode.interrupted) {
         return false;
       }
-      debugPrint('GoogleSignInException: ${e.code} ${e.description}');
-      throw Exception('No se pudo iniciar sesión con Google. Inténtalo de nuevo.');
+      debugPrint('GoogleSignInException: ${e.code} ${e.description}; probando flujo web.');
+      return _signInWithGoogleViaBrowser();
     } on FirebaseAuthException catch (e) {
+      throw Exception(_translateAuthError(e.code));
+    }
+  }
+
+  // Plan B cuando Credential Manager falla o no responde: el flujo OAuth web
+  // de Firebase (Custom Tab contra kkpenco-app-2026.firebaseapp.com), que no
+  // depende de Google Play Services.
+  Future<bool> _signInWithGoogleViaBrowser() async {
+    try {
+      final userCredential = await _auth.signInWithProvider(GoogleAuthProvider());
+      await _ensureUserDocument(userCredential.user);
+      return true;
+    } on FirebaseAuthException catch (e) {
+      // El usuario cerró la pestaña del navegador sin completar el login.
+      if (e.code == 'web-context-canceled' ||
+          e.code == 'web-context-cancelled' ||
+          e.code == 'user-cancelled') {
+        return false;
+      }
       throw Exception(_translateAuthError(e.code));
     }
   }
