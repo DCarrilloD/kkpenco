@@ -334,6 +334,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Single
     // confirma por enlace, quizá con la app cerrada; changeEmail ya no escribe
     // en Firestore por adelantado).
     AuthService().syncEmailWithFirestore();
+    // Reconciliar displayName de Auth desde el username de Firestore: cubre
+    // el caso de que updateDisplayName() no llegara a persistir en la caché
+    // local (ver comentario en syncDisplayNameFromFirestore).
+    AuthService().syncDisplayNameFromFirestore();
     // Publicar racha/contadores/ranking para los widgets de escritorio
     WidgetDataService.refresh();
     // Deep links de los widgets: kkpenco://open?tab=N[&trono=1] (tanto si la

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -267,10 +268,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         if (newName.isEmpty) return;
                         setModalState(() => isEditing = true);
                         try {
+                          final nameChanged = newName != currentName;
                           await _authService.updateProfile(
-                            displayName: newName != currentName ? newName : null,
+                            displayName: nameChanged ? newName : null,
                             avatarImage: selectedImage,
                           );
+                          // Repara de paso cualquier registro propio grabado
+                          // como "Sin Nombre" por el desajuste Auth/Firestore
+                          // (ver AuthService.syncDisplayNameFromFirestore).
+                          final uid = _authService.currentUser?.uid;
+                          if (nameChanged && uid != null) {
+                            unawaited(_dbService.backfillMissingDisplayNames(uid, newName));
+                          }
                           if (mounted) {
                             setState(() {
                                _loadProfileData();
@@ -542,11 +551,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
           continue;
         }
 
-        // Mapear campos de forma segura (el ID se regenera al importar)
+        // Mapear campos de forma segura (el ID se regenera al importar).
+        // displayName: se conserva el nombre original del backup (el que
+        // tenía el registro al crearse); solo si el backup no lo trae se usa
+        // el del perfil actual (importBackupEvents aplica ese fallback).
         importedEvents.add(KKEvent(
           id: '',
           userId: user.uid,
-          displayName: user.displayName,
+          displayName: m['username'] as String?,
           timestamp: DateTime.tryParse(m['timestamp'] ?? '') ?? DateTime.now(),
           duration: m['duration'],
           consistency: Consistency.values.firstWhere(

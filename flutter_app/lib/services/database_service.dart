@@ -2203,11 +2203,13 @@ class DatabaseService {
       // 2. Insertar todos los nuevos eventos
       final rand = Random();
       for (var ev in events) {
-        // Sobreescribir id, userId y username por seguridad
+        // Sobreescribir id y userId por seguridad; el nombre se conserva del
+        // propio backup (histórico) y solo cae al del perfil actual si el
+        // registro no traía uno.
         final securedEvent = KKEvent(
           id: 'mock_${DateTime.now().millisecondsSinceEpoch}_${rand.nextInt(10000)}',
           userId: uid,
-          displayName: username,
+          displayName: ev.displayName ?? username,
           timestamp: ev.timestamp,
           duration: ev.duration,
           consistency: ev.consistency,
@@ -2294,11 +2296,13 @@ class DatabaseService {
       final batch = _db.batch();
       final chunk = events.skip(index).take(500);
       for (var ev in chunk) {
-        // ID SIEMPRE nuevo: reutilizar el del JSON podía pisar docs ajenos
+        // ID SIEMPRE nuevo: reutilizar el del JSON podía pisar docs ajenos.
+        // displayName: se conserva el del propio backup; solo cae al del
+        // perfil actual si el registro no traía uno.
         final securedEvent = KKEvent(
           id: _db.collection('events').doc().id,
           userId: uid,
-          displayName: username,
+          displayName: ev.displayName ?? username,
           timestamp: ev.timestamp,
           duration: ev.duration,
           consistency: ev.consistency,
@@ -2369,6 +2373,54 @@ class DatabaseService {
     });
 
     await statsBatch.commit();
+  }
+
+  // Repara registros propios grabados como "Sin Nombre" (o sin nombre) por el
+  // desajuste entre el displayName de Auth y el username de Firestore — ver
+  // AuthService.syncDisplayNameFromFirestore. Se dispara desde "editar
+  // perfil" al confirmar el nombre; solo toca eventos del propio uid.
+  Future<int> backfillMissingDisplayNames(String uid, String correctName) async {
+    if (useMockData) {
+      int fixed = 0;
+      for (var i = 0; i < _mockEvents.length; i++) {
+        final ev = _mockEvents[i];
+        if (ev.userId == uid && (ev.displayName == null || ev.displayName == 'Sin Nombre')) {
+          _mockEvents[i] = KKEvent(
+            id: ev.id,
+            userId: ev.userId,
+            displayName: correctName,
+            timestamp: ev.timestamp,
+            duration: ev.duration,
+            consistency: ev.consistency,
+            color: ev.color,
+            location: ev.location,
+            difficulty: ev.difficulty,
+            estimatedWeight: ev.estimatedWeight,
+            notes: ev.notes,
+            latitude: ev.latitude,
+            longitude: ev.longitude,
+          );
+          fixed++;
+        }
+      }
+      if (fixed > 0) _eventsStreamController.add(List.from(_mockEvents));
+      return fixed;
+    }
+
+    final snap = await _eventsRef.where('userId', isEqualTo: uid).get();
+    final toFix = snap.docs.where((doc) {
+      final name = doc.data().displayName;
+      return name == null || name == 'Sin Nombre';
+    }).toList();
+
+    for (int i = 0; i < toFix.length; i += 500) {
+      final batch = _db.batch();
+      for (final doc in toFix.skip(i).take(500)) {
+        batch.update(doc.reference, {'username': correctName});
+      }
+      await batch.commit();
+    }
+    return toFix.length;
   }
 
   // --- GESTIÓN DE LISTA BLANCA (WHITELIST) ---

@@ -354,6 +354,31 @@ class AuthService {
     await user.verifyBeforeUpdateEmail(newEmail);
   }
 
+  /// Reconcilia el displayName de Auth con el username de Firestore (aquí la
+  /// fuente de verdad es Firestore, al revés que con el email): se ha visto
+  /// que updateDisplayName() confirma el cambio en el servidor pero no llega
+  /// a persistir en la caché local si la app se cierra justo después, dejando
+  /// el displayName de Auth en null en el próximo arranque aunque Firestore
+  /// esté bien. Como tracker/chat/duelos graban el nombre de cada registro
+  /// leyendo directamente displayName (no username), ese desajuste se traduce
+  /// en registros nuevos guardados para siempre como "Sin Nombre".
+  Future<void> syncDisplayNameFromFirestore() async {
+    if (useMockData) return;
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return;
+      if (user.displayName != null && user.displayName!.trim().isNotEmpty) return;
+
+      final doc = await _db.collection('users').doc(user.uid).get();
+      final username = doc.data()?['username'] as String?;
+      if (username != null && username.trim().isNotEmpty) {
+        await user.updateDisplayName(username);
+      }
+    } catch (e) {
+      debugPrint('Error sincronizando displayName con Firestore: $e');
+    }
+  }
+
   /// Reconcilia la copia del email en Firestore con el de Auth (fuente de
   /// verdad). Se llama al arrancar con sesión: cubre el caso de un cambio de
   /// email confirmado por enlace después de que la app se cerrara.
